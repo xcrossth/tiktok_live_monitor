@@ -16,114 +16,124 @@ app.get('/', (req, res) => {
     res.send('TikTok Live Monitor Backend is Running!');
 });
 
-let tiktokConnection = null;
-let currentUsername = null;
-let isConnecting = false;
-let retryInterval = null;
+// Store connections per socket
+const clientConnections = new Map();
 
 const connectToTikTok = (username, socket) => {
-    if (isConnecting) return;
+    const socketId = socket.id;
 
-    // Cleanup existing connection
-    if (tiktokConnection) {
-        tiktokConnection.disconnect();
-        tiktokConnection = null;
+    // Get existing connection state or create new
+    let clientState = clientConnections.get(socketId);
+
+    // If already connecting to this user, ignore
+    if (clientState && clientState.isConnecting && clientState.username === username) return;
+
+    // Cleanup existing connection if switching users
+    if (clientState) {
+        cleanupConnection(socketId);
     }
 
-    // Clear any existing retry interval
-    if (retryInterval) {
-        clearInterval(retryInterval);
-        retryInterval = null;
-    }
+    // Initialize new state
+    clientState = {
+        tiktokConnection: null,
+        username: username,
+        isConnecting: true,
+        retryInterval: null
+    };
+    clientConnections.set(socketId, clientState);
 
-    currentUsername = username;
-    isConnecting = true;
-
-    console.log(`Attempting to connect to ${username}`);
+    console.log(`[${socketId}] Attempting to connect to ${username}`);
     socket.emit('status', { status: 'connecting', message: `Connecting to ${username}...` });
 
-    tiktokConnection = new WebcastPushConnection(username);
+    const tiktokConnection = new WebcastPushConnection(username);
+    clientState.tiktokConnection = tiktokConnection;
 
     tiktokConnection.connect()
         .then(state => {
-            console.log(`Connected to ${username} (Room ID: ${state.roomId})`);
-            isConnecting = false;
-            socket.emit('status', { status: 'connected', message: `Connected to live stream!` });
-            if (state.roomInfo) {
-                console.log("Stream URL Data:", JSON.stringify(state.roomInfo.stream_url, null, 2));
-                socket.emit('roomInfo', state.roomInfo);
+            console.log(`[${socketId}] Connected to ${username} (Room ID: ${state.roomId})`);
+            if (clientConnections.has(socketId)) {
+                const currentState = clientConnections.get(socketId);
+                currentState.isConnecting = false;
+                socket.emit('status', { status: 'connected', message: `Connected to live stream!` });
+                if (state.roomInfo) {
+                    console.log(`[${socketId}] Stream URL Data found`);
+                    socket.emit('roomInfo', state.roomInfo);
+                }
             }
         })
         .catch(err => {
-            console.error('Failed to connect', err);
-            isConnecting = false;
-            socket.emit('status', { status: 'offline', message: `User offline or not found. Retrying in 10s...` });
+            console.error(`[${socketId}] Failed to connect to ${username}`, err);
+            if (clientConnections.has(socketId)) {
+                const currentState = clientConnections.get(socketId);
+                currentState.isConnecting = false;
+                socket.emit('status', { status: 'offline', message: `User offline or not found. Retrying in 10s...` });
 
-            // Retry logic
-            retryInterval = setInterval(() => {
-                if (!tiktokConnection || !tiktokConnection.connected) {
-                    console.log(`Retrying connection to ${username}...`);
-                    connectToTikTok(username, socket);
-                }
-            }, 10000);
+                // Retry logic
+                if (currentState.retryInterval) clearInterval(currentState.retryInterval);
+                currentState.retryInterval = setInterval(() => {
+                    if (clientConnections.has(socketId)) {
+                        console.log(`[${socketId}] Retrying connection to ${username}...`);
+                        connectToTikTok(username, socket);
+                    } else {
+                        clearInterval(currentState.retryInterval);
+                    }
+                }, 10000);
+            }
         });
 
     // Event listeners
-    tiktokConnection.on('chat', data => {
-        socket.emit('chat', { type: 'chat', ...data });
-    });
-
-    tiktokConnection.on('gift', data => {
-        socket.emit('gift', data);
-    });
-
-    tiktokConnection.on('like', data => {
-        socket.emit('chat', { type: 'like', ...data });
-    });
-
-    tiktokConnection.on('social', data => {
-        socket.emit('chat', { type: 'share', ...data });
-    });
-
-    tiktokConnection.on('member', data => {
-        socket.emit('chat', { type: 'join', ...data });
-    });
-
-    tiktokConnection.on('roomUser', data => {
-        socket.emit('roomUser', data);
-    });
+    tiktokConnection.on('chat', data => socket.emit('chat', { type: 'chat', ...data }));
+    tiktokConnection.on('gift', data => socket.emit('gift', data));
+    tiktokConnection.on('like', data => socket.emit('chat', { type: 'like', ...data }));
+    tiktokConnection.on('social', data => socket.emit('chat', { type: 'share', ...data }));
+    tiktokConnection.on('member', data => socket.emit('chat', { type: 'join', ...data }));
+    tiktokConnection.on('roomUser', data => socket.emit('roomUser', data));
 
     tiktokConnection.on('streamEnd', () => {
-        console.log('Stream ended');
+        console.log(`[${socketId}] Stream ended for ${username}`);
         socket.emit('status', { status: 'offline', message: 'Stream ended. Waiting for next stream...' });
-        // Start polling/retrying
-        retryInterval = setInterval(() => {
-            connectToTikTok(username, socket);
-        }, 10000);
+
+        if (clientConnections.has(socketId)) {
+            const currentState = clientConnections.get(socketId);
+            if (currentState.retryInterval) clearInterval(currentState.retryInterval);
+            currentState.retryInterval = setInterval(() => {
+                if (clientConnections.has(socketId)) {
+                    connectToTikTok(username, socket);
+                }
+            }, 10000);
+        }
     });
 
     tiktokConnection.on('error', err => {
-        console.error('Connection Error:', err);
-        // Don't necessarily disconnect, just log. Library handles some reconnections.
+        console.error(`[${socketId}] Connection Error:`, err);
     });
 };
 
+const cleanupConnection = (socketId) => {
+    const clientState = clientConnections.get(socketId);
+    if (clientState) {
+        console.log(`[${socketId}] Cleaning up connection for ${clientState.username}`);
+        if (clientState.tiktokConnection) {
+            clientState.tiktokConnection.disconnect();
+        }
+        if (clientState.retryInterval) {
+            clearInterval(clientState.retryInterval);
+        }
+        clientConnections.delete(socketId);
+    }
+};
+
 io.on('connection', (socket) => {
-    console.log('Client connected');
+    console.log(`Client connected: ${socket.id}`);
 
     socket.on('join', (username) => {
-        console.log(`Client requested to join: ${username}`);
+        console.log(`[${socket.id}] Client requested to join: ${username}`);
         connectToTikTok(username, socket);
     });
 
     socket.on('disconnect', () => {
-        console.log('Client disconnected');
-        if (tiktokConnection) {
-            tiktokConnection.disconnect();
-        }
-        if (retryInterval) {
-            clearInterval(retryInterval);
-        }
+        console.log(`Client disconnected: ${socket.id}`);
+        cleanupConnection(socket.id);
     });
 });
 
