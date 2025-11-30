@@ -67,6 +67,8 @@ const connectToTikTok = (username, socket) => {
                 socket.emit('status', { status: 'connected', message: `Connected to live stream!` });
                 if (state.roomInfo) {
                     console.log(`[${socketId}] Stream URL Data found`);
+                    // Debug log to inspect raw stream data
+                    console.log(`[${socketId}] RAW STREAM DATA:`, JSON.stringify(state.roomInfo.stream_url, null, 2));
                     socket.emit('roomInfo', state.roomInfo);
                 }
             }

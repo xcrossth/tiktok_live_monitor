@@ -29,11 +29,14 @@ const VideoPlayer = ({ username, roomInfo }) => {
             const pullData = roomInfo.stream_url.flv_pull_url;
             let newQualities = {};
 
-            if (typeof pullData === 'object') {
-                console.log("Available Stream Qualities:", Object.keys(pullData)); // Debug log
+            // Helper to add quality
+            const addQuality = (key, url) => {
+                if (!url) return;
 
                 // Map internal names to readable ones
                 const qualityMap = {
+                    'uhd_60': '1080p 60fps',
+                    'hd_60': '720p 60fps',
                     'uhd': 'Original (UHD)',
                     'origin': 'Original',
                     'FULL_HD1': '1080p',
@@ -43,22 +46,38 @@ const VideoPlayer = ({ username, roomInfo }) => {
                     'SD3': '240p'
                 };
 
-                // First pass: Add mapped qualities in order of priority
-                Object.entries(qualityMap).forEach(([key, label]) => {
-                    if (pullData[key]) {
-                        newQualities[label] = pullData[key];
-                    }
-                });
+                const label = qualityMap[key] || key;
+                newQualities[label] = url;
+            };
 
-                // Second pass: Add any remaining keys that weren't mapped
-                Object.keys(pullData).forEach(key => {
-                    const isMapped = Object.keys(qualityMap).includes(key);
-                    if (!isMapped) {
-                        newQualities[key] = pullData[key];
-                    }
-                });
+            // 1. Check flv_pull_url (Standard)
+            if (typeof pullData === 'object') {
+                Object.entries(pullData).forEach(([key, url]) => addQuality(key, url));
             } else if (typeof pullData === 'string') {
                 newQualities['Auto'] = pullData;
+            }
+
+            // 2. Check stream_url.data (High Quality / 60fps often here)
+            if (roomInfo.stream_url.data) {
+                let extraData = roomInfo.stream_url.data;
+                // If it's a string, try to parse it
+                if (typeof extraData === 'string') {
+                    try {
+                        extraData = JSON.parse(extraData);
+                    } catch (e) {
+                        console.error("Failed to parse stream_url.data", e);
+                        extraData = null;
+                    }
+                }
+
+                if (extraData) {
+                    // Structure is usually: { "uhd_60": { "main": { "flv": "URL" } }, ... }
+                    Object.entries(extraData).forEach(([key, value]) => {
+                        if (value && value.main && value.main.flv) {
+                            addQuality(key, value.main.flv);
+                        }
+                    });
+                }
             }
 
             setQualities(newQualities);
