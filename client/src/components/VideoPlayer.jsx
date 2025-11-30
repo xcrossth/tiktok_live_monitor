@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Play, AlertCircle } from 'lucide-react';
+import { ExternalLink, Play, AlertCircle, Settings } from 'lucide-react';
 import flvjs from 'flv.js';
 
 const VideoPlayer = ({ username, roomInfo }) => {
@@ -8,6 +8,12 @@ const VideoPlayer = ({ username, roomInfo }) => {
     const [showPlayButton, setShowPlayButton] = useState(false);
     const [error, setError] = useState(null);
     const [debugMsg, setDebugMsg] = useState("");
+
+    // Quality Switching State
+    const [qualities, setQualities] = useState({});
+    const [currentQuality, setCurrentQuality] = useState(null);
+    const [showQualityMenu, setShowQualityMenu] = useState(false);
+
     const videoRef = useRef(null);
     const flvPlayerRef = useRef(null);
 
@@ -17,6 +23,41 @@ const VideoPlayer = ({ username, roomInfo }) => {
         }
     }, [username]);
 
+    // Parse Room Info to get Qualities
+    useEffect(() => {
+        if (roomInfo && roomInfo.stream_url && roomInfo.stream_url.flv_pull_url) {
+            const pullData = roomInfo.stream_url.flv_pull_url;
+            let newQualities = {};
+
+            if (typeof pullData === 'object') {
+                // Map internal names to readable ones
+                // FULL_HD1 -> 1080p, HD1 -> 720p, SD1 -> 480p, SD2 -> 360p
+                if (pullData.FULL_HD1) newQualities['1080p'] = pullData.FULL_HD1;
+                if (pullData.HD1) newQualities['720p'] = pullData.HD1;
+                if (pullData.SD1) newQualities['480p'] = pullData.SD1;
+                if (pullData.SD2) newQualities['360p'] = pullData.SD2;
+
+                // Fallback if standard keys aren't found but others exist
+                if (Object.keys(newQualities).length === 0) {
+                    Object.keys(pullData).forEach(key => {
+                        newQualities[key] = pullData[key];
+                    });
+                }
+            } else if (typeof pullData === 'string') {
+                newQualities['Auto'] = pullData;
+            }
+
+            setQualities(newQualities);
+
+            // Default to highest quality
+            const qualityKeys = Object.keys(newQualities);
+            if (qualityKeys.length > 0 && !currentQuality) {
+                setCurrentQuality(qualityKeys[0]); // First one is usually highest priority in our extraction
+            }
+        }
+    }, [roomInfo]);
+
+    // Initialize Player when Quality or RoomInfo changes
     useEffect(() => {
         // Cleanup previous player
         if (flvPlayerRef.current) {
@@ -27,30 +68,12 @@ const VideoPlayer = ({ username, roomInfo }) => {
         setError(null);
         setDebugMsg("");
 
-        if (roomInfo && roomInfo.stream_url) {
-            console.log("Attempting to play stream from roomInfo", roomInfo.stream_url);
-            setDebugMsg("Found stream info...");
+        if (currentQuality && qualities[currentQuality]) {
+            const streamUrl = qualities[currentQuality];
+            console.log(`Attempting to play ${currentQuality} stream:`, streamUrl);
+            setDebugMsg(`Loading ${currentQuality} stream...`);
 
-            let streamUrl = null;
-            const streamData = roomInfo.stream_url;
-
-            // Try to find a valid FLV URL
-            if (streamData.flv_pull_url) {
-                // Priority: FULL_HD1 > HD1 > SD1 > SD2
-                streamUrl = streamData.flv_pull_url.FULL_HD1 ||
-                    streamData.flv_pull_url.HD1 ||
-                    streamData.flv_pull_url.SD1 ||
-                    streamData.flv_pull_url.SD2;
-
-                if (!streamUrl && typeof streamData.flv_pull_url === 'string') {
-                    streamUrl = streamData.flv_pull_url;
-                }
-            }
-
-            if (streamUrl && flvjs.isSupported()) {
-                console.log("Found FLV URL:", streamUrl);
-                setDebugMsg(`Attempting to play FLV: ${streamUrl.substring(0, 30)}...`);
-
+            if (flvjs.isSupported()) {
                 const flvPlayer = flvjs.createPlayer({
                     type: 'flv',
                     url: streamUrl,
@@ -66,13 +89,12 @@ const VideoPlayer = ({ username, roomInfo }) => {
                     playPromise.then(() => {
                         setIsPlaying(true);
                         setShowPlayButton(false);
-                        setDebugMsg("Playing native stream!");
+                        setDebugMsg(`Playing ${currentQuality} stream!`);
                     }).catch(err => {
                         console.error("Play error:", err);
-                        // If autoplay is blocked, show a manual play button but keep the player active
                         if (err.name === 'NotAllowedError' || err.message.includes('play() request was interrupted')) {
-                            setIsPlaying(true); // Show the video element
-                            setShowPlayButton(true); // Show overlay button
+                            setIsPlaying(true);
+                            setShowPlayButton(true);
                             setDebugMsg("Autoplay blocked. Click to play.");
                         } else {
                             setError("Autoplay blocked or CORS error.");
@@ -94,14 +116,13 @@ const VideoPlayer = ({ username, roomInfo }) => {
 
                 flvPlayerRef.current = flvPlayer;
             } else {
-                console.log("No usable FLV URL found or FLV not supported.");
-                setError("No direct stream available.");
-                setDebugMsg("No valid FLV URL found in data.");
+                setError("FLV not supported.");
+                setDebugMsg("Browser does not support FLV.");
             }
-        } else {
+        } else if (!roomInfo) {
             setDebugMsg("Waiting for stream info...");
         }
-    }, [roomInfo]);
+    }, [currentQuality, qualities, roomInfo]);
 
     const handleManualPlay = () => {
         if (flvPlayerRef.current) {
@@ -121,6 +142,11 @@ const VideoPlayer = ({ username, roomInfo }) => {
         window.open(`https://www.tiktok.com/@${username}/live`, 'tiktok_live', 'width=400,height=800,menubar=no,toolbar=no');
     };
 
+    const changeQuality = (q) => {
+        setCurrentQuality(q);
+        setShowQualityMenu(false);
+    };
+
     return (
         <div className="w-full h-full bg-black relative flex flex-col overflow-hidden group">
             {/* Native Player */}
@@ -128,10 +154,37 @@ const VideoPlayer = ({ username, roomInfo }) => {
                 ref={videoRef}
                 className={`w-full h-full object-contain ${isPlaying ? 'block' : 'hidden'}`}
                 controls
-                muted // Muted needed for autoplay often
+                muted
             />
 
-            {/* Manual Play Overlay (for Autoplay Blocked) */}
+            {/* Quality Selector Overlay */}
+            {isPlaying && Object.keys(qualities).length > 1 && (
+                <div className="absolute top-4 right-4 z-30">
+                    <button
+                        onClick={() => setShowQualityMenu(!showQualityMenu)}
+                        className="bg-black/60 hover:bg-black/80 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border border-gray-600 backdrop-blur-sm transition-all"
+                    >
+                        <Settings size={14} />
+                        {currentQuality}
+                    </button>
+
+                    {showQualityMenu && (
+                        <div className="absolute right-0 top-full mt-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-[100px]">
+                            {Object.keys(qualities).map(q => (
+                                <button
+                                    key={q}
+                                    onClick={() => changeQuality(q)}
+                                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-800 transition-colors ${currentQuality === q ? 'text-pink-500 font-bold' : 'text-gray-300'}`}
+                                >
+                                    {q}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Manual Play Overlay */}
             {showPlayButton && isPlaying && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-20">
                     <button
@@ -143,7 +196,7 @@ const VideoPlayer = ({ username, roomInfo }) => {
                 </div>
             )}
 
-            {/* Fallback Iframe (only if not playing native AND not waiting for manual play) */}
+            {/* Fallback Iframe */}
             {!isPlaying && (
                 <div className="w-full h-full relative">
                     <iframe
@@ -154,7 +207,6 @@ const VideoPlayer = ({ username, roomInfo }) => {
                         sandbox="allow-popups allow-popups-to-escape-sandbox allow-scripts allow-top-navigation allow-same-origin"
                     />
 
-                    {/* Overlay */}
                     <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-4 text-center pointer-events-none">
                         <div className="pointer-events-auto bg-gray-900/90 p-6 rounded-xl border border-gray-700 shadow-2xl max-w-sm">
                             <AlertCircle className="w-12 h-12 text-pink-500 mx-auto mb-4" />
