@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Settings } from 'lucide-react';
+import { Settings, ShieldCheck } from 'lucide-react';
 
 const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoins: true }, onToggleFilter }) => {
     const bottomRef = useRef(null);
@@ -91,29 +91,41 @@ const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoi
                                 <>
                                     {/* Username hidden as requested, only Display Name shown */}
                                     {renderUserLink(chat.uniqueId, (
-                                        <span className="font-bold text-blue-400 hover:underline">{chat.nickname}</span>
+                                        <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : 'text-blue-400'}`}>
+                                            {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
+                                            {chat.nickname}
+                                        </span>
                                     ), "inline-block mr-1")}
-                                    <span className="text-gray-200">: {chat.comment}</span>
+                                    <span className={chat.isModerator ? 'text-green-100' : 'text-gray-200'}>: {chat.comment}</span>
                                 </>
                             )}
                             {chat.type === 'like' && (
                                 <div className="text-gray-400 italic">
                                     {renderUserLink(chat.uniqueId, (
-                                        <span className="font-bold text-blue-300 hover:underline">{chat.nickname}</span>
+                                        <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : 'text-blue-300'}`}>
+                                            {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
+                                            {chat.nickname}
+                                        </span>
                                     ))} liked the LIVE
                                 </div>
                             )}
                             {chat.type === 'share' && (
                                 <div className="text-green-400 italic">
                                     {renderUserLink(chat.uniqueId, (
-                                        <span className="font-bold hover:underline">{chat.nickname}</span>
+                                        <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : ''}`}>
+                                            {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
+                                            {chat.nickname}
+                                        </span>
                                     ))} shared the LIVE
                                 </div>
                             )}
                             {chat.type === 'join' && (
                                 <div className="text-gray-500 text-sm">
                                     {renderUserLink(chat.uniqueId, (
-                                        <span className="font-bold hover:underline">{chat.nickname}</span>
+                                        <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : ''}`}>
+                                            {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
+                                            {chat.nickname}
+                                        </span>
                                     ))} joined
                                 </div>
                             )}
