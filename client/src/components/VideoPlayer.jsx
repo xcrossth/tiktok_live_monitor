@@ -30,19 +30,33 @@ const VideoPlayer = ({ username, roomInfo }) => {
             let newQualities = {};
 
             if (typeof pullData === 'object') {
-                // Map internal names to readable ones
-                // FULL_HD1 -> 1080p, HD1 -> 720p, SD1 -> 480p, SD2 -> 360p
-                if (pullData.FULL_HD1) newQualities['1080p'] = pullData.FULL_HD1;
-                if (pullData.HD1) newQualities['720p'] = pullData.HD1;
-                if (pullData.SD1) newQualities['480p'] = pullData.SD1;
-                if (pullData.SD2) newQualities['360p'] = pullData.SD2;
+                console.log("Available Stream Qualities:", Object.keys(pullData)); // Debug log
 
-                // Fallback if standard keys aren't found but others exist
-                if (Object.keys(newQualities).length === 0) {
-                    Object.keys(pullData).forEach(key => {
+                // Map internal names to readable ones
+                const qualityMap = {
+                    'uhd': 'Original (UHD)',
+                    'origin': 'Original',
+                    'FULL_HD1': '1080p',
+                    'HD1': '720p',
+                    'SD1': '480p',
+                    'SD2': '360p',
+                    'SD3': '240p'
+                };
+
+                // First pass: Add mapped qualities in order of priority
+                Object.entries(qualityMap).forEach(([key, label]) => {
+                    if (pullData[key]) {
+                        newQualities[label] = pullData[key];
+                    }
+                });
+
+                // Second pass: Add any remaining keys that weren't mapped
+                Object.keys(pullData).forEach(key => {
+                    const isMapped = Object.keys(qualityMap).includes(key);
+                    if (!isMapped) {
                         newQualities[key] = pullData[key];
-                    });
-                }
+                    }
+                });
             } else if (typeof pullData === 'string') {
                 newQualities['Auto'] = pullData;
             }
