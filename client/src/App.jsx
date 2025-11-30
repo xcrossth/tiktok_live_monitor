@@ -22,6 +22,12 @@ function App() {
         showJoins: false
     });
 
+    const [connectionSettings, setConnectionSettings] = useState({
+        enableAutoReconnect: false,
+        retryInterval: 10000
+    });
+    const [showConnectionSettings, setShowConnectionSettings] = useState(false);
+
     // Keep track of ranking in a ref to avoid dependency loops, then update state
     const rankingMap = useRef(new Map());
     const lastGiftRef = useRef(null);
@@ -30,12 +36,15 @@ function App() {
         // Load saved username and filters
         const savedUsername = localStorage.getItem('tiktok_username');
         const savedFilters = localStorage.getItem('tiktok_chat_filters');
+        const savedConnectionSettings = localStorage.getItem('tiktok_connection_settings');
 
         if (savedUsername) {
             setUsername(savedUsername);
             // Auto-connect after a short delay to ensure socket is ready
             setTimeout(() => {
-                handleConnect(null, savedUsername);
+                // Use default or saved settings for auto-connect
+                const settings = savedConnectionSettings ? JSON.parse(savedConnectionSettings) : { enableAutoReconnect: false, retryInterval: 10000 };
+                handleConnect(null, savedUsername, settings);
             }, 500);
         }
 
@@ -44,6 +53,14 @@ function App() {
                 setChatFilters(JSON.parse(savedFilters));
             } catch (e) {
                 console.error("Failed to parse saved filters", e);
+            }
+        }
+
+        if (savedConnectionSettings) {
+            try {
+                setConnectionSettings(JSON.parse(savedConnectionSettings));
+            } catch (e) {
+                console.error("Failed to parse saved connection settings", e);
             }
         }
 
@@ -152,7 +169,7 @@ function App() {
         };
     }, []);
 
-    const handleConnect = (e, storedUsername = null) => {
+    const handleConnect = (e, storedUsername = null, specificSettings = null) => {
         if (e) e.preventDefault();
         const userToConnect = storedUsername || username;
         if (!userToConnect) return;
@@ -171,7 +188,8 @@ function App() {
         lastGiftRef.current = null; // Reset last gift ref
         setActiveUser(userToConnect);
 
-        socket.emit('join', userToConnect);
+        const settingsToSend = specificSettings || connectionSettings;
+        socket.emit('join', { username: userToConnect, options: settingsToSend });
     };
 
     const handleToggleFilter = (key) => {
@@ -179,6 +197,14 @@ function App() {
             const newFilters = { ...prev, [key]: !prev[key] };
             localStorage.setItem('tiktok_chat_filters', JSON.stringify(newFilters));
             return newFilters;
+        });
+    };
+
+    const updateConnectionSettings = (key, value) => {
+        setConnectionSettings(prev => {
+            const newSettings = { ...prev, [key]: value };
+            localStorage.setItem('tiktok_connection_settings', JSON.stringify(newSettings));
+            return newSettings;
         });
     };
 
@@ -193,25 +219,75 @@ function App() {
                     </h1>
                 </div>
 
-                <form onSubmit={handleConnect} className="flex items-center gap-2">
-                    <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                        <input
-                            type="text"
-                            placeholder="Enter TikTok Username"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            className="pl-9 pr-4 py-2 bg-gray-700 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 transition-all"
-                        />
-                    </div>
+                <div className="flex items-center gap-2">
+                    <form onSubmit={handleConnect} className="flex items-center gap-2">
+                        <div className="relative group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <input
+                                type="text"
+                                placeholder="Enter TikTok Username"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                className="pl-9 pr-4 py-2 bg-gray-700 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 transition-all"
+                            />
+                        </div>
 
-                    <button
-                        type="submit"
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-full text-sm font-bold transition-colors shadow-lg hover:shadow-blue-500/50"
-                    >
-                        Monitor
-                    </button>
-                </form>
+                        <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-full text-sm font-bold transition-colors shadow-lg hover:shadow-blue-500/50"
+                        >
+                            Monitor
+                        </button>
+                    </form>
+
+                    {/* Connection Settings Button */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowConnectionSettings(!showConnectionSettings)}
+                            className={`p-2 rounded-full transition-colors ${showConnectionSettings ? 'bg-gray-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-white'}`}
+                            title="Connection Settings"
+                        >
+                            <Settings size={20} />
+                        </button>
+
+                        {showConnectionSettings && (
+                            <div className="absolute right-0 top-full mt-2 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-4 z-50">
+                                <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wider">Connection Settings</h3>
+
+                                <div className="space-y-4">
+                                    <label className="flex items-center justify-between text-sm text-gray-300 cursor-pointer">
+                                        <span>Auto Reconnect</span>
+                                        <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+                                            <input
+                                                type="checkbox"
+                                                checked={connectionSettings.enableAutoReconnect}
+                                                onChange={(e) => updateConnectionSettings('enableAutoReconnect', e.target.checked)}
+                                                className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 checked:border-green-400 right-6 top-1"
+                                                style={{ right: connectionSettings.enableAutoReconnect ? '2px' : '22px' }}
+                                            />
+                                            <div className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${connectionSettings.enableAutoReconnect ? 'bg-green-400' : 'bg-gray-600'}`}></div>
+                                        </div>
+                                    </label>
+
+                                    {connectionSettings.enableAutoReconnect && (
+                                        <div className="space-y-1">
+                                            <label className="block text-xs text-gray-400">Reconnect Interval (ms)</label>
+                                            <input
+                                                type="number"
+                                                min="2000"
+                                                step="1000"
+                                                value={connectionSettings.retryInterval}
+                                                onChange={(e) => updateConnectionSettings('retryInterval', parseInt(e.target.value) || 10000)}
+                                                className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                                            />
+                                            <p className="text-[10px] text-gray-500">Minimum 2000ms</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
                 <div className="flex items-center gap-2 text-sm">
                     <div className="flex items-center gap-4 mr-4 bg-gray-700/50 px-3 py-1 rounded-full border border-gray-600">
