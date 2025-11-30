@@ -5,6 +5,7 @@ import flvjs from 'flv.js';
 const VideoPlayer = ({ username, roomInfo }) => {
     const [embedUrl, setEmbedUrl] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [showPlayButton, setShowPlayButton] = useState(false);
     const [error, setError] = useState(null);
     const [debugMsg, setDebugMsg] = useState("");
     const videoRef = useRef(null);
@@ -64,11 +65,19 @@ const VideoPlayer = ({ username, roomInfo }) => {
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
                         setIsPlaying(true);
+                        setShowPlayButton(false);
                         setDebugMsg("Playing native stream!");
                     }).catch(err => {
                         console.error("Play error:", err);
-                        setError("Autoplay blocked or CORS error.");
-                        setDebugMsg(`Error: ${err.message}`);
+                        // If autoplay is blocked, show a manual play button but keep the player active
+                        if (err.name === 'NotAllowedError' || err.message.includes('play() request was interrupted')) {
+                            setIsPlaying(true); // Show the video element
+                            setShowPlayButton(true); // Show overlay button
+                            setDebugMsg("Autoplay blocked. Click to play.");
+                        } else {
+                            setError("Autoplay blocked or CORS error.");
+                            setDebugMsg(`Error: ${err.message}`);
+                        }
                     });
                 }
 
@@ -94,6 +103,20 @@ const VideoPlayer = ({ username, roomInfo }) => {
         }
     }, [roomInfo]);
 
+    const handleManualPlay = () => {
+        if (flvPlayerRef.current) {
+            flvPlayerRef.current.play()
+                .then(() => {
+                    setShowPlayButton(false);
+                    setDebugMsg("Resumed playback.");
+                })
+                .catch(err => {
+                    console.error("Manual play error:", err);
+                    setDebugMsg(`Manual play failed: ${err.message}`);
+                });
+        }
+    };
+
     const handleOpenPopup = () => {
         window.open(`https://www.tiktok.com/@${username}/live`, 'tiktok_live', 'width=400,height=800,menubar=no,toolbar=no');
     };
@@ -108,7 +131,19 @@ const VideoPlayer = ({ username, roomInfo }) => {
                 muted // Muted needed for autoplay often
             />
 
-            {/* Fallback Iframe (only if not playing native) */}
+            {/* Manual Play Overlay (for Autoplay Blocked) */}
+            {showPlayButton && isPlaying && (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-20">
+                    <button
+                        onClick={handleManualPlay}
+                        className="bg-pink-600 hover:bg-pink-500 text-white rounded-full p-6 shadow-2xl transform transition-transform hover:scale-110"
+                    >
+                        <Play size={48} fill="currentColor" />
+                    </button>
+                </div>
+            )}
+
+            {/* Fallback Iframe (only if not playing native AND not waiting for manual play) */}
             {!isPlaying && (
                 <div className="w-full h-full relative">
                     <iframe
@@ -146,8 +181,8 @@ const VideoPlayer = ({ username, roomInfo }) => {
             )}
 
             {/* Status Indicator */}
-            {isPlaying && (
-                <div className="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 animate-pulse pointer-events-none">
+            {isPlaying && !showPlayButton && (
+                <div className="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 animate-pulse pointer-events-none z-10">
                     <div className="w-2 h-2 bg-white rounded-full" />
                     LIVE (Native)
                 </div>
