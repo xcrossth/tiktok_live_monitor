@@ -45,15 +45,14 @@ const connectToTikTok = (username, socket) => {
     console.log(`[${socketId}] Attempting to connect to ${username}`);
     socket.emit('status', { status: 'connecting', message: `Connecting to ${username}...` });
 
-    // Use Session ID if available (fix for cloud deployments)
     const options = {
-        enableExtendedGiftInfo: true
+        enableExtendedGiftInfo: true,
+        requestOptions: {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        }
     };
-
-    if (process.env.TIKTOK_SESSION_ID) {
-        options.sessionId = process.env.TIKTOK_SESSION_ID;
-        console.log(`[${socketId}] Using Session ID for connection`);
-    }
 
     const tiktokConnection = new WebcastPushConnection(username, options);
     clientState.tiktokConnection = tiktokConnection;
@@ -66,9 +65,6 @@ const connectToTikTok = (username, socket) => {
                 currentState.isConnecting = false;
                 socket.emit('status', { status: 'connected', message: `Connected to live stream!` });
                 if (state.roomInfo) {
-                    console.log(`[${socketId}] Stream URL Data found`);
-                    // Debug log to inspect raw stream data
-                    console.log(`[${socketId}] RAW STREAM DATA:`, JSON.stringify(state.roomInfo.stream_url, null, 2));
                     socket.emit('roomInfo', state.roomInfo);
                 }
             }
@@ -78,7 +74,7 @@ const connectToTikTok = (username, socket) => {
             if (clientConnections.has(socketId)) {
                 const currentState = clientConnections.get(socketId);
                 currentState.isConnecting = false;
-                socket.emit('status', { status: 'offline', message: `User offline or not found. Retrying in 10s...` });
+                socket.emit('status', { status: 'offline', message: `Connection failed. Retrying in 10s...` });
 
                 // Retry logic
                 if (currentState.retryInterval) clearInterval(currentState.retryInterval);
@@ -152,4 +148,12 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });

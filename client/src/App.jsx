@@ -18,7 +18,7 @@ function App() {
     const [stats, setStats] = useState({ viewers: 0, likes: 0, diamonds: 0 });
     const [chatFilters, setChatFilters] = useState({
         showLikes: false,
-        showShares: true,
+        showShares: false,
         showJoins: false
     });
 
@@ -194,19 +194,20 @@ function App() {
                 </div>
 
                 <form onSubmit={handleConnect} className="flex items-center gap-2">
-                    <div className="relative">
+                    <div className="relative group">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                         <input
                             type="text"
                             placeholder="Enter TikTok Username"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
-                            className="pl-9 pr-4 py-2 bg-gray-700 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                            className="pl-9 pr-4 py-2 bg-gray-700 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 transition-all"
                         />
                     </div>
+
                     <button
                         type="submit"
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-full text-sm font-bold transition-colors"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-full text-sm font-bold transition-colors shadow-lg hover:shadow-blue-500/50"
                     >
                         Monitor
                     </button>
@@ -256,7 +257,6 @@ function App() {
             </main>
         </div>
     );
-
 }
 
 export default App;

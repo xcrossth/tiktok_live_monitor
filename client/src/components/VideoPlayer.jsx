@@ -25,15 +25,14 @@ const VideoPlayer = ({ username, roomInfo }) => {
 
     // Parse Room Info to get Qualities
     useEffect(() => {
-        if (roomInfo && roomInfo.stream_url && roomInfo.stream_url.flv_pull_url) {
-            const pullData = roomInfo.stream_url.flv_pull_url;
+        if (roomInfo && roomInfo.stream_url) {
             let newQualities = {};
 
             // Helper to add quality
             const addQuality = (key, url) => {
                 if (!url) return;
 
-                // Map internal names to readable ones
+                let label = null;
                 const qualityMap = {
                     'uhd_60': '1080p 60fps',
                     'hd_60': '720p 60fps',
@@ -43,49 +42,43 @@ const VideoPlayer = ({ username, roomInfo }) => {
                     'HD1': '720p',
                     'SD1': '480p',
                     'SD2': '360p',
-                    'SD3': '240p'
+                    'SD3': '240p',
+                    'ld': 'Low Definition'
                 };
+                label = qualityMap[key] || key;
 
-                const label = qualityMap[key] || key;
-                newQualities[label] = url;
+                if (newQualities[label] && newQualities[label] !== url) {
+                    newQualities[`${label} (${key})`] = url;
+                } else {
+                    newQualities[label] = url;
+                }
             };
 
-            // 1. Check flv_pull_url (Standard)
+            // 1. Check rtmp_pull_url (Force as Original if valid) - PRIORITY
+            if (roomInfo.stream_url.rtmp_pull_url && roomInfo.stream_url.rtmp_pull_url.startsWith('http')) {
+                addQuality('origin', roomInfo.stream_url.rtmp_pull_url);
+            }
+
+            // 2. Check flv_pull_url (Standard)
+            const pullData = roomInfo.stream_url.flv_pull_url;
             if (typeof pullData === 'object') {
                 Object.entries(pullData).forEach(([key, url]) => addQuality(key, url));
             } else if (typeof pullData === 'string') {
                 newQualities['Auto'] = pullData;
             }
 
-            // 2. Check stream_url.data (High Quality / 60fps often here)
-            if (roomInfo.stream_url.data) {
-                let extraData = roomInfo.stream_url.data;
-                // If it's a string, try to parse it
-                if (typeof extraData === 'string') {
-                    try {
-                        extraData = JSON.parse(extraData);
-                    } catch (e) {
-                        console.error("Failed to parse stream_url.data", e);
-                        extraData = null;
-                    }
-                }
-
-                if (extraData) {
-                    // Structure is usually: { "uhd_60": { "main": { "flv": "URL" } }, ... }
-                    Object.entries(extraData).forEach(([key, value]) => {
-                        if (value && value.main && value.main.flv) {
-                            addQuality(key, value.main.flv);
-                        }
-                    });
-                }
-            }
-
             setQualities(newQualities);
 
-            // Default to highest quality
+            // Default to Original if available, otherwise highest quality
             const qualityKeys = Object.keys(newQualities);
             if (qualityKeys.length > 0 && !currentQuality) {
-                setCurrentQuality(qualityKeys[0]); // First one is usually highest priority in our extraction
+                if (newQualities['Original']) {
+                    setCurrentQuality('Original');
+                } else if (newQualities['Original (UHD)']) {
+                    setCurrentQuality('Original (UHD)');
+                } else {
+                    setCurrentQuality(qualityKeys[0]);
+                }
             }
         }
     }, [roomInfo]);
@@ -103,8 +96,6 @@ const VideoPlayer = ({ username, roomInfo }) => {
 
         if (currentQuality && qualities[currentQuality]) {
             const streamUrl = qualities[currentQuality];
-            console.log(`Attempting to play ${currentQuality} stream:`, streamUrl);
-            setDebugMsg(`Loading ${currentQuality} stream...`);
 
             if (flvjs.isSupported()) {
                 const flvPlayer = flvjs.createPlayer({
@@ -122,24 +113,18 @@ const VideoPlayer = ({ username, roomInfo }) => {
                     playPromise.then(() => {
                         setIsPlaying(true);
                         setShowPlayButton(false);
-                        setDebugMsg(`Playing ${currentQuality} stream!`);
                     }).catch(err => {
-                        console.error("Play error:", err);
                         if (err.name === 'NotAllowedError' || err.message.includes('play() request was interrupted')) {
                             setIsPlaying(true);
                             setShowPlayButton(true);
-                            setDebugMsg("Autoplay blocked. Click to play.");
                         } else {
                             setError("Autoplay blocked or CORS error.");
-                            setDebugMsg(`Error: ${err.message}`);
                         }
                     });
                 }
 
                 flvPlayer.on(flvjs.Events.ERROR, (err) => {
-                    console.error("FLV Error:", err);
                     setError("Stream error (CORS/Network).");
-                    setDebugMsg(`FLV Error: ${err}`);
                     if (flvPlayerRef.current) {
                         flvPlayerRef.current.destroy();
                         flvPlayerRef.current = null;
@@ -150,10 +135,7 @@ const VideoPlayer = ({ username, roomInfo }) => {
                 flvPlayerRef.current = flvPlayer;
             } else {
                 setError("FLV not supported.");
-                setDebugMsg("Browser does not support FLV.");
             }
-        } else if (!roomInfo) {
-            setDebugMsg("Waiting for stream info...");
         }
     }, [currentQuality, qualities, roomInfo]);
 
@@ -162,17 +144,11 @@ const VideoPlayer = ({ username, roomInfo }) => {
             flvPlayerRef.current.play()
                 .then(() => {
                     setShowPlayButton(false);
-                    setDebugMsg("Resumed playback.");
                 })
                 .catch(err => {
                     console.error("Manual play error:", err);
-                    setDebugMsg(`Manual play failed: ${err.message}`);
                 });
         }
-    };
-
-    const handleOpenPopup = () => {
-        window.open(`https://www.tiktok.com/@${username}/live`, 'tiktok_live', 'width=400,height=800,menubar=no,toolbar=no');
     };
 
     const changeQuality = (q) => {
@@ -185,7 +161,7 @@ const VideoPlayer = ({ username, roomInfo }) => {
             {/* Native Player */}
             <video
                 ref={videoRef}
-                className={`w-full h-full object-contain ${isPlaying ? 'block' : 'hidden'}`}
+                className="w-full h-full object-contain block"
                 controls
                 muted
             />
@@ -218,7 +194,7 @@ const VideoPlayer = ({ username, roomInfo }) => {
             )}
 
             {/* Manual Play Overlay */}
-            {showPlayButton && isPlaying && (
+            {showPlayButton && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-20">
                     <button
                         onClick={handleManualPlay}
@@ -226,42 +202,6 @@ const VideoPlayer = ({ username, roomInfo }) => {
                     >
                         <Play size={48} fill="currentColor" />
                     </button>
-                </div>
-            )}
-
-            {/* Fallback Iframe */}
-            {!isPlaying && (
-                <div className="w-full h-full relative">
-                    <iframe
-                        src={embedUrl}
-                        className="w-full h-full border-0"
-                        allowFullScreen
-                        title="TikTok Live"
-                        sandbox="allow-popups allow-popups-to-escape-sandbox allow-scripts allow-top-navigation allow-same-origin"
-                    />
-
-                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-4 text-center pointer-events-none">
-                        <div className="pointer-events-auto bg-gray-900/90 p-6 rounded-xl border border-gray-700 shadow-2xl max-w-sm">
-                            <AlertCircle className="w-12 h-12 text-pink-500 mx-auto mb-4" />
-                            <h3 className="text-lg font-bold mb-2">Video Embed Restricted</h3>
-                            <p className="text-sm text-gray-400 mb-2">
-                                TikTok often blocks external video players.
-                            </p>
-                            {debugMsg && (
-                                <div className="mb-4 p-2 bg-black/50 rounded text-xs font-mono text-yellow-400 break-all">
-                                    {debugMsg}
-                                </div>
-                            )}
-
-                            <button
-                                onClick={handleOpenPopup}
-                                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-pink-600 to-blue-600 hover:from-pink-500 hover:to-blue-500 text-white px-6 py-3 rounded-lg font-bold transition-all transform hover:scale-105"
-                            >
-                                <ExternalLink size={18} />
-                                Open in Popup Window
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
 
