@@ -96,7 +96,7 @@ const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoi
                                             {chat.nickname}
                                         </span>
                                     ), "inline-block mr-1")}
-                                    <span className={chat.isModerator ? 'text-green-100' : 'text-gray-200'}>: {chat.comment}</span>
+                                    <span className={chat.isModerator ? 'text-green-300' : 'text-gray-200'}>: {chat.comment}</span>
                                 </>
                             )}
                             {chat.type === 'like' && (
