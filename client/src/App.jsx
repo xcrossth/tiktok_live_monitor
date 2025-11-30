@@ -211,7 +211,7 @@ function App() {
     return (
         <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
             {/* Header */}
-            <header className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700 shadow-md z-10">
+            <header className="flex items-center justify-between p-4 bg-gray-800 border-b border-gray-700 shadow-md z-50">
                 <div className="flex items-center gap-2">
                     <Activity className="text-pink-500" />
                     <h1 className="text-xl font-bold bg-gradient-to-r from-pink-500 to-blue-500 bg-clip-text text-transparent">
@@ -269,20 +269,19 @@ function App() {
                                         </div>
                                     </label>
 
-                                    {connectionSettings.enableAutoReconnect && (
-                                        <div className="space-y-1">
-                                            <label className="block text-xs text-gray-400">Reconnect Interval (ms)</label>
-                                            <input
-                                                type="number"
-                                                min="2000"
-                                                step="1000"
-                                                value={connectionSettings.retryInterval}
-                                                onChange={(e) => updateConnectionSettings('retryInterval', parseInt(e.target.value) || 10000)}
-                                                className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
-                                            />
-                                            <p className="text-[10px] text-gray-500">Minimum 2000ms</p>
-                                        </div>
-                                    )}
+                                    <div className={`space-y-1 transition-opacity ${connectionSettings.enableAutoReconnect ? 'opacity-100' : 'opacity-50'}`}>
+                                        <label className="block text-xs text-gray-400">Reconnect Interval (ms)</label>
+                                        <input
+                                            type="number"
+                                            min="2000"
+                                            step="1000"
+                                            disabled={!connectionSettings.enableAutoReconnect}
+                                            value={connectionSettings.retryInterval}
+                                            onChange={(e) => updateConnectionSettings('retryInterval', parseInt(e.target.value) || 10000)}
+                                            className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500 disabled:cursor-not-allowed"
+                                        />
+                                        <p className="text-[10px] text-gray-500">Minimum 2000ms</p>
+                                    </div>
                                 </div>
                             </div>
                         )}
