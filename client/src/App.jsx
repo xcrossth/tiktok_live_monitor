@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
-import { Search, Activity, Wifi, WifiOff } from 'lucide-react';
+import { Search, Activity, Wifi, WifiOff, Settings } from 'lucide-react';
 import VideoPlayer from './components/VideoPlayer';
 import ChatLog from './components/ChatLog';
 import GiftLog from './components/GiftLog';
