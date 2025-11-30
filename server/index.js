@@ -45,7 +45,17 @@ const connectToTikTok = (username, socket) => {
     console.log(`[${socketId}] Attempting to connect to ${username}`);
     socket.emit('status', { status: 'connecting', message: `Connecting to ${username}...` });
 
-    const tiktokConnection = new WebcastPushConnection(username);
+    // Use Session ID if available (fix for cloud deployments)
+    const options = {
+        enableExtendedGiftInfo: true
+    };
+
+    if (process.env.TIKTOK_SESSION_ID) {
+        options.sessionId = process.env.TIKTOK_SESSION_ID;
+        console.log(`[${socketId}] Using Session ID for connection`);
+    }
+
+    const tiktokConnection = new WebcastPushConnection(username, options);
     clientState.tiktokConnection = tiktokConnection;
 
     tiktokConnection.connect()
