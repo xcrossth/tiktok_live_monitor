@@ -16,14 +16,21 @@ function App() {
     const [gifts, setGifts] = useState([]);
     const [ranking, setRanking] = useState([]);
     const [stats, setStats] = useState({ viewers: 0, likes: 0, diamonds: 0 });
+    const [chatFilters, setChatFilters] = useState({
+        showLikes: false,
+        showShares: true,
+        showJoins: false
+    });
 
     // Keep track of ranking in a ref to avoid dependency loops, then update state
     const rankingMap = useRef(new Map());
     const lastGiftRef = useRef(null);
 
     useEffect(() => {
-        // Load saved username
+        // Load saved username and filters
         const savedUsername = localStorage.getItem('tiktok_username');
+        const savedFilters = localStorage.getItem('tiktok_chat_filters');
+
         if (savedUsername) {
             setUsername(savedUsername);
             // Auto-connect after a short delay to ensure socket is ready
@@ -31,6 +38,15 @@ function App() {
                 handleConnect(null, savedUsername);
             }, 500);
         }
+
+        if (savedFilters) {
+            try {
+                setChatFilters(JSON.parse(savedFilters));
+            } catch (e) {
+                console.error("Failed to parse saved filters", e);
+            }
+        }
+
 
         socket.on('connect', () => {
             console.log('Connected to backend');
@@ -158,6 +174,14 @@ function App() {
         socket.emit('join', userToConnect);
     };
 
+    const handleToggleFilter = (key) => {
+        setChatFilters(prev => {
+            const newFilters = { ...prev, [key]: !prev[key] };
+            localStorage.setItem('tiktok_chat_filters', JSON.stringify(newFilters));
+            return newFilters;
+        });
+    };
+
     return (
         <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
             {/* Header */}
@@ -218,7 +242,11 @@ function App() {
 
                 {/* Middle: Chat (33%) */}
                 <div className="w-[33%] border-r border-gray-700">
-                    <ChatLog chats={chats} />
+                    <ChatLog
+                        chats={chats}
+                        filters={chatFilters}
+                        onToggleFilter={handleToggleFilter}
+                    />
                 </div>
 
                 {/* Right: Gifts & Ranking (24%) */}
@@ -228,6 +256,7 @@ function App() {
             </main>
         </div>
     );
+
 }
 
 export default App;
