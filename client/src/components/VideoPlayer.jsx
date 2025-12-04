@@ -1,13 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ExternalLink, Play, AlertCircle, Settings } from 'lucide-react';
+import { ExternalLink, Play, AlertCircle, Settings, Circle, Square } from 'lucide-react';
 import flvjs from 'flv.js';
+import io from 'socket.io-client'; // Import socket to emit events
 
-const VideoPlayer = ({ username, roomInfo }) => {
+// We need access to the socket instance. 
+// Since it's defined in App.jsx and not passed down, we might need to export it or pass it as prop.
+// For now, assuming we can import the same socket instance or it's passed as prop.
+// Actually, App.jsx defines `const socket = ...` outside component. 
+// Best practice: Pass socket as prop to VideoPlayer.
+
+const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as prop
     const [embedUrl, setEmbedUrl] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [showPlayButton, setShowPlayButton] = useState(false);
     const [error, setError] = useState(null);
     const [debugMsg, setDebugMsg] = useState("");
+
+    // Recording State
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingMsg, setRecordingMsg] = useState("");
 
     // Quality Switching State
     const [qualities, setQualities] = useState({});
@@ -22,6 +33,35 @@ const VideoPlayer = ({ username, roomInfo }) => {
             setEmbedUrl(`https://www.tiktok.com/@${username}/live`);
         }
     }, [username]);
+
+    // Listen for recording status
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleRecordingStatus = (data) => {
+            setIsRecording(data.isRecording);
+            if (data.message) setRecordingMsg(data.message);
+            if (data.error) {
+                setRecordingMsg(data.error);
+                setTimeout(() => setRecordingMsg(""), 5000);
+            }
+        };
+
+        socket.on('recordingStatus', handleRecordingStatus);
+
+        return () => {
+            socket.off('recordingStatus', handleRecordingStatus);
+        };
+    }, [socket]);
+
+    const toggleRecording = () => {
+        if (!socket) return;
+        if (isRecording) {
+            socket.emit('stopRecording');
+        } else {
+            socket.emit('startRecording');
+        }
+    };
 
     // Parse Room Info to get Qualities
     useEffect(() => {
@@ -166,30 +206,55 @@ const VideoPlayer = ({ username, roomInfo }) => {
                 muted
             />
 
-            {/* Quality Selector Overlay */}
-            {isPlaying && Object.keys(qualities).length > 1 && (
-                <div className="absolute top-4 right-4 z-30">
+            {/* Controls Overlay (Top Right) */}
+            <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+                {/* Record Button */}
+                {isPlaying && (
                     <button
-                        onClick={() => setShowQualityMenu(!showQualityMenu)}
-                        className="bg-black/60 hover:bg-black/80 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border border-gray-600 backdrop-blur-sm transition-all"
+                        onClick={toggleRecording}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border backdrop-blur-sm transition-all ${isRecording
+                                ? 'bg-red-600/80 border-red-500 text-white animate-pulse'
+                                : 'bg-black/60 hover:bg-black/80 border-gray-600 text-white'
+                            }`}
+                        title={isRecording ? "Stop Recording" : "Start Recording"}
                     >
-                        <Settings size={14} />
-                        {currentQuality}
+                        {isRecording ? <Square size={14} fill="currentColor" /> : <Circle size={14} fill="currentColor" />}
+                        {isRecording ? "REC" : "Record"}
                     </button>
+                )}
 
-                    {showQualityMenu && (
-                        <div className="absolute right-0 top-full mt-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-[100px]">
-                            {Object.keys(qualities).map(q => (
-                                <button
-                                    key={q}
-                                    onClick={() => changeQuality(q)}
-                                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-800 transition-colors ${currentQuality === q ? 'text-pink-500 font-bold' : 'text-gray-300'}`}
-                                >
-                                    {q}
-                                </button>
-                            ))}
-                        </div>
-                    )}
+                {/* Quality Selector */}
+                {isPlaying && Object.keys(qualities).length > 1 && (
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowQualityMenu(!showQualityMenu)}
+                            className="bg-black/60 hover:bg-black/80 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border border-gray-600 backdrop-blur-sm transition-all"
+                        >
+                            <Settings size={14} />
+                            {currentQuality}
+                        </button>
+
+                        {showQualityMenu && (
+                            <div className="absolute right-0 top-full mt-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-[100px]">
+                                {Object.keys(qualities).map(q => (
+                                    <button
+                                        key={q}
+                                        onClick={() => changeQuality(q)}
+                                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-800 transition-colors ${currentQuality === q ? 'text-pink-500 font-bold' : 'text-gray-300'}`}
+                                    >
+                                        {q}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Recording Message Toast */}
+            {recordingMsg && (
+                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-4 py-2 rounded-full backdrop-blur-md z-40 transition-opacity">
+                    {recordingMsg}
                 </div>
             )}
 

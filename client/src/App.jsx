@@ -30,7 +30,8 @@ function App() {
 
     // Keep track of ranking in a ref to avoid dependency loops, then update state
     const rankingMap = useRef(new Map());
-    const lastGiftRef = useRef(null);
+    const lastGiftRef = useRef(new Map());
+    const processedMsgIds = useRef(new Set());
 
     useEffect(() => {
         // Load saved username and filters
@@ -96,38 +97,82 @@ function App() {
         });
 
         socket.on('gift', (data) => {
-            const lastGift = lastGiftRef.current;
-            let addedCoins = 0;
+            // Deduplicate by msgId
+            if (data.msgId && processedMsgIds.current.has(data.msgId)) {
+                return;
+            }
+            if (data.msgId) {
+                processedMsgIds.current.add(data.msgId);
+                // Keep set size manageable
+                if (processedMsgIds.current.size > 500) {
+                    const first = processedMsgIds.current.values().next().value;
+                    processedMsgIds.current.delete(first);
+                }
+            }
 
-            // Check if this is a combo update (same user, same giftId as last received)
-            if (lastGift && lastGift.uniqueId === data.uniqueId && lastGift.giftId === data.giftId) {
-                // Calculate delta: (New Count - Old Count) * Cost
-                // Ensure we don't add negative if packets arrive out of order (unlikely but safe)
-                const countDiff = Math.max(0, data.repeatCount - lastGift.repeatCount);
-                addedCoins = countDiff * (data.diamondCount || 0);
+            const giftKey = `${data.uniqueId}-${data.giftId}`;
+            const lastGift = lastGiftRef.current.get(giftKey);
+            const now = Date.now();
+            let addedCoins = 0;
+            let addedCount = 0;
+
+            if (lastGift) {
+                const timeDiff = now - lastGift.timestamp;
+                if (timeDiff < 3000 && data.repeatCount > lastGift.repeatCount) {
+                    // Continuation of streak within time window
+                    const countDiff = data.repeatCount - lastGift.repeatCount;
+                    addedCoins = countDiff * (data.diamondCount || 0);
+                    addedCount = countDiff;
+                } else if (timeDiff < 3000 && data.repeatCount === lastGift.repeatCount) {
+                    // Duplicate packet (repeatCount same) within window - ignore
+                    return;
+                } else {
+                    // New streak (repeatCount reset) OR timeout (treat as new separate gift)
+                    addedCoins = data.repeatCount * (data.diamondCount || 0);
+                    addedCount = data.repeatCount;
+                }
             } else {
                 // New gift sequence
                 addedCoins = data.repeatCount * (data.diamondCount || 0);
+                addedCount = data.repeatCount;
             }
 
-            // Update lastGiftRef
-            lastGiftRef.current = data;
+            // Update lastGiftRef for this user+gift combo
+            lastGiftRef.current.set(giftKey, { ...data, timestamp: now });
 
             // Update Visual Log
             setGifts(prev => {
                 const currentGifts = [...prev];
-                // Check the visual head of the list for grouping
-                const visualLastGift = currentGifts[0];
 
-                if (visualLastGift && visualLastGift.uniqueId === data.uniqueId && visualLastGift.giftId === data.giftId) {
-                    currentGifts[0] = {
-                        ...data,
-                        repeatCount: data.repeatCount,
-                        combo: true
-                    };
+                // Find existing visual entry for this user and gift within 3 seconds
+                const existingIndex = currentGifts.findIndex(g =>
+                    g.uniqueId === data.uniqueId &&
+                    g.giftId === data.giftId &&
+                    (now - (g.updatedAt || now)) < 3000 // 3 second window
+                );
+
+                if (existingIndex !== -1) {
+                    // Update existing entry
+                    const existing = currentGifts[existingIndex];
+                    // Remove from current position
+                    currentGifts.splice(existingIndex, 1);
+                    // Add to top with updated count
+                    currentGifts.unshift({
+                        ...existing,
+                        repeatCount: (existing.visualCount || existing.repeatCount) + addedCount,
+                        visualCount: (existing.visualCount || existing.repeatCount) + addedCount,
+                        combo: true,
+                        updatedAt: now
+                    });
                     return currentGifts;
                 } else {
-                    return [data, ...prev].slice(0, 50);
+                    // Add new entry
+                    return [{
+                        ...data,
+                        visualCount: addedCount,
+                        repeatCount: data.repeatCount,
+                        updatedAt: now
+                    }, ...prev].slice(0, 50);
                 }
             });
 
@@ -185,7 +230,8 @@ function App() {
         setRoomInfo(null);
         setStats({ viewers: 0, likes: 0, diamonds: 0 });
         rankingMap.current.clear();
-        lastGiftRef.current = null; // Reset last gift ref
+        lastGiftRef.current.clear(); // Reset last gift map
+        processedMsgIds.current.clear(); // Reset processed msg ids
         setActiveUser(userToConnect);
 
         const settingsToSend = specificSettings || connectionSettings;
@@ -313,7 +359,7 @@ function App() {
             <main className="flex-1 flex overflow-hidden">
                 {/* Left: Video (43%) */}
                 <div className="w-[43%] border-r border-gray-700 bg-black">
-                    <VideoPlayer username={activeUser} roomInfo={roomInfo} />
+                    <VideoPlayer username={activeUser} roomInfo={roomInfo} socket={socket} />
                 </div>
 
                 {/* Middle: Chat (33%) */}

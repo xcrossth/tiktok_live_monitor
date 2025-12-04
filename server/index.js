@@ -3,6 +3,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { WebcastPushConnection } = require('tiktok-live-connector');
 
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -39,7 +42,9 @@ const connectToTikTok = (username, socket, options = {}) => {
         tiktokConnection: null,
         username: username,
         isConnecting: true,
-        retryInterval: null
+        retryInterval: null,
+        roomInfo: null,
+        ffmpegProcess: null
     };
     clientConnections.set(socketId, clientState);
 
@@ -67,6 +72,7 @@ const connectToTikTok = (username, socket, options = {}) => {
                 currentState.isConnecting = false;
                 socket.emit('status', { status: 'connected', message: `Connected to live stream!` });
                 if (state.roomInfo) {
+                    currentState.roomInfo = state.roomInfo; // Store roomInfo
                     socket.emit('roomInfo', state.roomInfo);
                 }
             }
@@ -77,7 +83,24 @@ const connectToTikTok = (username, socket, options = {}) => {
                 const currentState = clientConnections.get(socketId);
                 currentState.isConnecting = false;
 
-                if (enableAutoReconnect) {
+                const isLiveEnded = (err.toString().includes('LIVE has ended')) ||
+                    (err.exception && err.exception.toString().includes('LIVE has ended')) ||
+                    (err.message && err.message.includes('LIVE has ended'));
+
+                if (isLiveEnded) {
+                    console.log(`[${socketId}] Stream ended for ${username} (detected via error)`);
+                    if (enableAutoReconnect) {
+                        socket.emit('status', { status: 'offline', message: 'Stream ended. Waiting for next stream...' });
+                        if (currentState.retryInterval) clearInterval(currentState.retryInterval);
+                        currentState.retryInterval = setInterval(() => {
+                            if (clientConnections.has(socketId)) {
+                                connectToTikTok(username, socket, options);
+                            }
+                        }, Math.max(2000, retryInterval));
+                    } else {
+                        socket.emit('status', { status: 'offline', message: 'Stream ended.' });
+                    }
+                } else if (enableAutoReconnect) {
                     socket.emit('status', { status: 'offline', message: `Connection failed. Retrying in ${retryInterval / 1000}s...` });
                     // Retry logic
                     if (currentState.retryInterval) clearInterval(currentState.retryInterval);
@@ -138,6 +161,9 @@ const cleanupConnection = (socketId) => {
         if (clientState.retryInterval) {
             clearInterval(clientState.retryInterval);
         }
+        if (clientState.ffmpegProcess) {
+            clientState.ffmpegProcess.kill('SIGINT');
+        }
         clientConnections.delete(socketId);
     }
 };
@@ -158,6 +184,97 @@ io.on('connection', (socket) => {
 
         console.log(`[${socket.id}] Client requested to join: ${username}`);
         connectToTikTok(username, socket, options);
+    });
+
+    socket.on('startRecording', () => {
+        const clientState = clientConnections.get(socket.id);
+        if (!clientState || !clientState.tiktokConnection) return;
+
+        // Check if already recording
+        if (clientState.ffmpegProcess) {
+            socket.emit('recordingStatus', { isRecording: true, message: 'Already recording' });
+            return;
+        }
+
+        // We need a stream URL. 
+        // Ideally, we should have captured it from the 'roomInfo' or connection state.
+        // For now, we'll try to get it from the state if available, or ask client to send it?
+        // Better: The client received roomInfo, but server also has access to it via state.roomInfo in the connect promise.
+        // Let's store roomInfo in clientState when connected.
+
+        if (!clientState.roomInfo || !clientState.roomInfo.stream_url) {
+            socket.emit('recordingStatus', { isRecording: false, error: 'No stream URL found. Wait for connection.' });
+            return;
+        }
+
+        const streamUrl = clientState.roomInfo.stream_url.rtmp_pull_url ||
+            Object.values(clientState.roomInfo.stream_url.flv_pull_url)[0];
+
+        if (!streamUrl) {
+            socket.emit('recordingStatus', { isRecording: false, error: 'No valid stream URL found.' });
+            return;
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `recordings/${clientState.username}-${timestamp}.mp4`;
+
+        // Ensure recordings dir exists
+        const fs = require('fs');
+        if (!fs.existsSync('recordings')) {
+            fs.mkdirSync('recordings');
+        }
+
+        console.log(`[${socket.id}] Starting recording for ${clientState.username} to ${filename}`);
+        socket.emit('recordingStatus', { isRecording: true, message: 'Recording started...' });
+
+        const ffmpegProcess = ffmpeg(streamUrl)
+            .setFfmpegPath(ffmpegPath)
+            .inputOptions(['-re']) // Read input at native frame rate
+            .outputOptions(['-c copy', '-bsf:a aac_adtstoasc']) // Copy stream, fix audio bitstream
+            .output(filename)
+            .on('start', (commandLine) => {
+                console.log('Spawned Ffmpeg with command: ' + commandLine);
+            })
+            .on('error', (err) => {
+                console.error('Ffmpeg error:', err);
+                socket.emit('recordingStatus', { isRecording: false, error: 'Recording failed: ' + err.message });
+                clientState.ffmpegProcess = null;
+            })
+            .on('end', () => {
+                console.log('Ffmpeg process ended');
+                socket.emit('recordingStatus', { isRecording: false, message: 'Recording saved.' });
+                clientState.ffmpegProcess = null;
+            });
+
+        ffmpegProcess.run();
+        clientState.ffmpegProcess = ffmpegProcess;
+    });
+
+    socket.on('stopRecording', () => {
+        const clientState = clientConnections.get(socket.id);
+        if (clientState && clientState.ffmpegProcess) {
+            console.log(`[${socket.id}] Stopping recording for ${clientState.username}`);
+
+            // Send 'q' to stdin to quit gracefully and write MP4 trailer
+            if (clientState.ffmpegProcess.ffmpegProc && clientState.ffmpegProcess.ffmpegProc.stdin) {
+                clientState.ffmpegProcess.ffmpegProc.stdin.write('q');
+            } else {
+                // Fallback if stdin not available
+                clientState.ffmpegProcess.kill('SIGINT');
+            }
+
+            // Force kill if not finished in 5 seconds
+            /*
+            setTimeout(() => {
+                if (clientState.ffmpegProcess) {
+                    console.log('Force killing ffmpeg...');
+                    clientState.ffmpegProcess.kill('SIGKILL');
+                    clientState.ffmpegProcess = null;
+                }
+            }, 5000);
+            */
+            // Note: The 'end' event handler will clear clientState.ffmpegProcess
+        }
     });
 
     socket.on('disconnect', () => {

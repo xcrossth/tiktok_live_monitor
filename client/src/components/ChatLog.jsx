@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Settings, ShieldCheck } from 'lucide-react';
+import { Settings, ShieldCheck, Star } from 'lucide-react';
 
 const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoins: true }, onToggleFilter }) => {
     const bottomRef = useRef(null);
@@ -26,6 +26,35 @@ const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoi
         if (chat.type === 'join' && !filters.showJoins) return false;
         return true;
     });
+
+    const getLevel = (chat) => {
+        // Try to find level in various possible locations
+        const level = chat.userDetails?.userAttributes?.gifterLevel ||
+            chat.userAttributes?.gifterLevel ||
+            chat.gifterLevel ||
+            0;
+        return level > 0 ? level : null;
+    };
+
+    const LevelBadge = ({ level }) => {
+        if (!level) return null;
+
+        // Dynamic color based on level (simplified logic)
+        let bgColor = "bg-gray-600";
+        if (level >= 10) bgColor = "bg-blue-600";
+        if (level >= 20) bgColor = "bg-cyan-600";
+        if (level >= 30) bgColor = "bg-green-600";
+        if (level >= 40) bgColor = "bg-yellow-600";
+        if (level >= 50) bgColor = "bg-orange-600";
+        if (level >= 60) bgColor = "bg-red-600";
+
+        return (
+            <span className={`${bgColor} text-white text-[10px] font-bold px-1 py-0.5 rounded mr-1.5 inline-flex items-center justify-center min-w-[36px] align-middle gap-0.5`}>
+                <Star size={10} fill="currentColor" className="text-yellow-300" />
+                <span>{level}</span>
+            </span>
+        );
+    };
 
     return (
         <div className="flex flex-col h-full bg-gray-900 border-r border-gray-700">
@@ -92,6 +121,7 @@ const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoi
                                     {/* Username hidden as requested, only Display Name shown */}
                                     {renderUserLink(chat.uniqueId, (
                                         <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : 'text-blue-400'}`}>
+                                            <LevelBadge level={getLevel(chat)} />
                                             {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
                                             {chat.nickname}
                                         </span>
@@ -103,6 +133,7 @@ const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoi
                                 <div className="text-gray-400 italic">
                                     {renderUserLink(chat.uniqueId, (
                                         <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : 'text-blue-300'}`}>
+                                            <LevelBadge level={getLevel(chat)} />
                                             {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
                                             {chat.nickname}
                                         </span>
@@ -113,6 +144,7 @@ const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoi
                                 <div className="text-green-400 italic">
                                     {renderUserLink(chat.uniqueId, (
                                         <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : ''}`}>
+                                            <LevelBadge level={getLevel(chat)} />
                                             {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
                                             {chat.nickname}
                                         </span>
@@ -123,6 +155,7 @@ const ChatLog = ({ chats, filters = { showLikes: true, showShares: true, showJoi
                                 <div className="text-gray-500 text-sm">
                                     {renderUserLink(chat.uniqueId, (
                                         <span className={`font-bold hover:underline ${chat.isModerator ? 'text-green-400' : ''}`}>
+                                            <LevelBadge level={getLevel(chat)} />
                                             {chat.isModerator && <ShieldCheck size={14} className="inline mr-1 -mt-0.5" />}
                                             {chat.nickname}
                                         </span>
