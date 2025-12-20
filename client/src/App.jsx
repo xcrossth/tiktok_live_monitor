@@ -4,8 +4,47 @@ import { Search, Activity, Wifi, WifiOff, Settings } from 'lucide-react';
 import VideoPlayer from './components/VideoPlayer';
 import ChatLog from './components/ChatLog';
 import GiftLog from './components/GiftLog';
+import GiftDisplay from './components/GiftDisplay';
+import GiftAnimation from './components/GiftAnimation';
 
 const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001');
+
+const StatusDisplay = ({ status }) => {
+    const [timeLeft, setTimeLeft] = useState(0);
+
+    useEffect(() => {
+        if (!status.nextRetryTime) {
+            setTimeLeft(0);
+            return;
+        }
+
+        const updateTimer = () => {
+            const now = Date.now();
+            const diff = Math.ceil((status.nextRetryTime - now) / 1000);
+            setTimeLeft(Math.max(0, diff));
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [status.nextRetryTime, status.status]);
+
+    const statusColor =
+        status.status === 'connected' ? 'text-green-400' :
+            status.status === 'connecting' ? 'text-yellow-400' :
+                'text-gray-400';
+
+    return (
+        <span className={statusColor}>
+            {status.message}
+            {timeLeft > 0 && status.status === 'offline' && (
+                <span className="ml-1 font-mono font-bold text-yellow-500">
+                    ({timeLeft}s)
+                </span>
+            )}
+        </span>
+    );
+};
 
 function App() {
     const [username, setUsername] = useState('');
@@ -24,14 +63,113 @@ function App() {
 
     const [connectionSettings, setConnectionSettings] = useState({
         enableAutoReconnect: false,
-        retryInterval: 10000
+        retryInterval: 10000,
+        chatHistoryLimit: 5000,
+        giftHistoryLimit: 5000
     });
     const [showConnectionSettings, setShowConnectionSettings] = useState(false);
+    const settingsRef = useRef(null);
+    // Ref to access latest settings in socket callbacks without re-subscribing
+    const connectionSettingsRef = useRef(connectionSettings);
+
+    useEffect(() => {
+        connectionSettingsRef.current = connectionSettings;
+    }, [connectionSettings]);
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+                setShowConnectionSettings(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
 
     // Keep track of ranking in a ref to avoid dependency loops, then update state
     const rankingMap = useRef(new Map());
     const lastGiftRef = useRef(new Map());
     const processedMsgIds = useRef(new Set());
+    const userCache = useRef(new Map()); // Cache { gifterLevel, teamMemberLevel, nickname, profilePictureUrl }
+
+    // Helper to update cache and enrich data
+    const processUserData = (data) => {
+        const uniqueId = data.uniqueId;
+        if (!uniqueId) return data;
+
+        const currentCache = userCache.current.get(uniqueId) || {};
+
+        // Extract level from various possible locations in incoming data
+        const incomingLevel = data.userDetails?.userAttributes?.gifterLevel ||
+            data.userAttributes?.gifterLevel ||
+            data.gifterLevel ||
+            0;
+
+        // Extract team member level
+        const incomingTeamLevel = data.teamMemberLevel ||
+            data.userDetails?.userAttributes?.teamMemberLevel ||
+            0;
+
+        // Update cache if we have new substantial info
+        const newCache = { ...currentCache };
+        if (incomingLevel > 0) newCache.gifterLevel = incomingLevel;
+        if (incomingTeamLevel > 0) newCache.teamMemberLevel = incomingTeamLevel;
+        if (data.nickname) newCache.nickname = data.nickname;
+        if (data.profilePictureUrl) newCache.profilePictureUrl = data.profilePictureUrl;
+
+        userCache.current.set(uniqueId, newCache);
+
+        // Return enriched data
+        // If incoming has no level (or 0) but cache has it, use cache
+        let finalLevel = incomingLevel;
+        if (finalLevel === 0 && newCache.gifterLevel > 0) {
+            finalLevel = newCache.gifterLevel;
+        }
+
+        let finalTeamLevel = incomingTeamLevel;
+        if (finalTeamLevel === 0 && newCache.teamMemberLevel > 0) {
+            finalTeamLevel = newCache.teamMemberLevel;
+        }
+
+        // Attach standardized level to data for easier access in components
+        return { ...data, gifterLevel: finalLevel, teamMemberLevel: finalTeamLevel };
+    };
+
+    // Gift Display Queue
+    const [giftQueue, setGiftQueue] = useState([]);
+    const [currentGift, setCurrentGift] = useState(null);
+
+    // Animation Queue (SVGA)
+    const [animationQueue, setAnimationQueue] = useState([]);
+    const [currentAnimation, setCurrentAnimation] = useState(null);
+
+    // Process Gift Queue
+    useEffect(() => {
+        if (!currentGift && giftQueue.length > 0) {
+            const nextGift = giftQueue[0];
+            setCurrentGift(nextGift);
+            setGiftQueue(prev => prev.slice(1));
+        }
+    }, [currentGift, giftQueue]);
+
+    // Process Animation Queue
+    useEffect(() => {
+        if (!currentAnimation && animationQueue.length > 0) {
+            const nextAnimation = animationQueue[0];
+            setCurrentAnimation(nextAnimation);
+            setAnimationQueue(prev => prev.slice(1));
+        }
+    }, [currentAnimation, animationQueue]);
+
+    const handleGiftComplete = () => {
+        setCurrentGift(null);
+    };
+
+    const handleAnimationComplete = () => {
+        setCurrentAnimation(null);
+    };
 
     useEffect(() => {
         // Load saved username and filters
@@ -44,7 +182,7 @@ function App() {
             // Auto-connect after a short delay to ensure socket is ready
             setTimeout(() => {
                 // Use default or saved settings for auto-connect
-                const settings = savedConnectionSettings ? JSON.parse(savedConnectionSettings) : { enableAutoReconnect: false, retryInterval: 10000 };
+                const settings = savedConnectionSettings ? JSON.parse(savedConnectionSettings) : { enableAutoReconnect: false, retryInterval: 10000, chatHistoryLimit: 5000, giftHistoryLimit: 5000 };
                 handleConnect(null, savedUsername, settings);
             }, 500);
         }
@@ -59,7 +197,9 @@ function App() {
 
         if (savedConnectionSettings) {
             try {
-                setConnectionSettings(JSON.parse(savedConnectionSettings));
+                const parsed = JSON.parse(savedConnectionSettings);
+                // Merge with defaults to ensure new fields exist
+                setConnectionSettings(prev => ({ ...prev, ...parsed }));
             } catch (e) {
                 console.error("Failed to parse saved connection settings", e);
             }
@@ -87,16 +227,29 @@ function App() {
         });
 
         socket.on('chat', (data) => {
+            const enrichedData = processUserData(data);
+
             if (data.type === 'like') {
                 setStats(prev => ({
                     ...prev,
                     likes: data.totalLikeCount
                 }));
             }
-            setChats(prev => [...prev.slice(-199), data]); // Keep last 200 messages
+            setChats(prev => {
+                const limit = connectionSettingsRef.current.chatHistoryLimit || 5000;
+                const newList = [...prev, enrichedData];
+                if (newList.length > limit) {
+                    return newList.slice(-limit);
+                }
+                return newList;
+            });
         });
 
-        socket.on('gift', (data) => {
+
+
+        socket.on('gift', (rawData) => {
+            const data = processUserData(rawData); // Enrich gift data too
+
             // Deduplicate by msgId
             if (data.msgId && processedMsgIds.current.has(data.msgId)) {
                 return;
@@ -116,20 +269,64 @@ function App() {
             let addedCoins = 0;
             let addedCount = 0;
 
+            // Check for animation (Logic: if it has an animation URL or is "expensive" enough)
+            // Note: Since we don't have price, we check specific fields or assume high combo implies celebration
+            const hasAnimation = data.extendedGiftInfo?.animation_url || data.diamondCount >= 99;
+            // Deduplicate animation trigger? 
+            // We might want to trigger it only on the FIRST of the streak, or every X combo
+            if (hasAnimation) {
+                // Simple logic: Trigger if new streak or repeatCount % 10 === 0
+                // Also ensure it's not already in queue to avoid spam?
+                // For now, let's queue it if it's a "significant" update
+            }
+
+            // DEMO: If gift name contains "Rose" or specific test case, trigger animation with sample URL
+            // This is just to verify functionality without expensive gifts
+            if (data.giftName && data.giftName.toLowerCase().includes('heart') && data.repeatCount === 1) {
+                // Mock animation for testing locally
+                setAnimationQueue(prev => [...prev, {
+                    ...data,
+                    url: "https://github.com/yyued/SVGA-Samples/blob/master/angel.svga?raw=true" // Public sample
+                }]);
+            } else if (hasAnimation && (data.repeatCount === 1 || data.repeatCount % 50 === 0)) {
+                setAnimationQueue(prev => [...prev, data]);
+            }
+
             if (lastGift) {
-                const timeDiff = now - lastGift.timestamp;
-                if (timeDiff < 3000 && data.repeatCount > lastGift.repeatCount) {
-                    // Continuation of streak within time window
-                    const countDiff = data.repeatCount - lastGift.repeatCount;
-                    addedCoins = countDiff * (data.diamondCount || 0);
-                    addedCount = countDiff;
-                } else if (timeDiff < 3000 && data.repeatCount === lastGift.repeatCount) {
-                    // Duplicate packet (repeatCount same) within window - ignore
-                    return;
-                } else {
-                    // New streak (repeatCount reset) OR timeout (treat as new separate gift)
-                    addedCoins = data.repeatCount * (data.diamondCount || 0);
-                    addedCount = data.repeatCount;
+                // If groupId matches, it is strictly the same streak
+                if (data.groupId && lastGift.groupId && data.groupId === lastGift.groupId) {
+                    if (data.repeatCount > lastGift.repeatCount) {
+                        addedCoins = (data.repeatCount - lastGift.repeatCount) * (data.diamondCount || 0);
+                        addedCount = data.repeatCount - lastGift.repeatCount;
+                    } else {
+                        // Duplicate or out-of-order packet for same streak
+                        return;
+                    }
+                }
+                // Fallback for missing groupId: Use time + repeatCount heuristic
+                else {
+                    const timeDiff = now - lastGift.timestamp;
+
+                    // FIX: Ignore "phantom" x1 packets that arrive after a batch x100 packet
+                    // If we receive a count of 1 shortly after a high count, it's likely an out-of-order "start" packet
+                    if (timeDiff < 3000 && data.repeatCount === 1 && lastGift.repeatCount >= 10) {
+                        return;
+                    }
+
+                    // If same gift type from same user
+                    if (timeDiff < 5000 && data.repeatCount === lastGift.repeatCount) {
+                        // Likely duplicate packet (retry) even if groupId missing
+                        return;
+                    }
+                    else if (timeDiff < 5000 && data.repeatCount > lastGift.repeatCount) {
+                        // Continuation (assumed)
+                        addedCoins = (data.repeatCount - lastGift.repeatCount) * (data.diamondCount || 0);
+                        addedCount = data.repeatCount - lastGift.repeatCount;
+                    } else {
+                        // New streak
+                        addedCoins = data.repeatCount * (data.diamondCount || 0);
+                        addedCount = data.repeatCount;
+                    }
                 }
             } else {
                 // New gift sequence
@@ -139,6 +336,34 @@ function App() {
 
             // Update lastGiftRef for this user+gift combo
             lastGiftRef.current.set(giftKey, { ...data, timestamp: now });
+
+            // --- GIFT DISPLAY LOGIC ---
+            // If the current gift displayed is the same user & gift, update it directly (combo)
+            // Otherwise add to queue
+            setCurrentGift(current => {
+                if (current && current.uniqueId === data.uniqueId && current.giftId === data.giftId) {
+                    // Return updated object to trigger re-render of GiftDisplay
+                    return { ...current, repeatCount: data.repeatCount };
+                }
+
+                // If not current, add to queue
+                setGiftQueue(prev => {
+                    // Check if last in queue is same, if so update that one
+                    if (prev.length > 0) {
+                        const lastInQueue = prev[prev.length - 1];
+                        if (lastInQueue.uniqueId === data.uniqueId && lastInQueue.giftId === data.giftId) {
+                            const newQueue = [...prev];
+                            newQueue[newQueue.length - 1] = { ...lastInQueue, repeatCount: data.repeatCount };
+                            return newQueue;
+                        }
+                    }
+                    // Limit queue size to prevent backlog
+                    if (prev.length > 10) return prev;
+                    return [...prev, data];
+                });
+
+                return current;
+            });
 
             // Update Visual Log
             setGifts(prev => {
@@ -172,7 +397,7 @@ function App() {
                         visualCount: addedCount,
                         repeatCount: data.repeatCount,
                         updatedAt: now
-                    }, ...prev].slice(0, 50);
+                    }, ...prev].slice(0, connectionSettingsRef.current.giftHistoryLimit || 5000);
                 }
             });
 
@@ -287,7 +512,7 @@ function App() {
                     </form>
 
                     {/* Connection Settings Button */}
-                    <div className="relative">
+                    <div className="relative" ref={settingsRef}>
                         <button
                             onClick={() => setShowConnectionSettings(!showConnectionSettings)}
                             className={`p-2 rounded-full transition-colors ${showConnectionSettings ? 'bg-gray-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-white'}`}
@@ -328,6 +553,29 @@ function App() {
                                         />
                                         <p className="text-[10px] text-gray-500">Minimum 2000ms</p>
                                     </div>
+
+                                    <div className="space-y-1">
+                                        <label className="block text-xs text-gray-400">Msgs to Keep</label>
+                                        <input
+                                            type="number"
+                                            min="10"
+                                            step="100"
+                                            value={connectionSettings.chatHistoryLimit || 5000}
+                                            onChange={(e) => updateConnectionSettings('chatHistoryLimit', parseInt(e.target.value) || 5000)}
+                                            className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-xs text-gray-400">Gifts to Keep</label>
+                                        <input
+                                            type="number"
+                                            min="10"
+                                            step="100"
+                                            value={connectionSettings.giftHistoryLimit || 5000}
+                                            onChange={(e) => updateConnectionSettings('giftHistoryLimit', parseInt(e.target.value) || 5000)}
+                                            className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -346,20 +594,17 @@ function App() {
                     ) : (
                         <WifiOff className="text-red-400 w-4 h-4" />
                     )}
-                    <span className={
-                        status.status === 'connected' ? 'text-green-400' :
-                            status.status === 'connecting' ? 'text-yellow-400' : 'text-gray-400'
-                    }>
-                        {status.message}
-                    </span>
+                    <StatusDisplay status={status} />
                 </div>
             </header>
 
             {/* Main Content - 3 Pane Layout */}
             <main className="flex-1 flex overflow-hidden">
                 {/* Left: Video (43%) */}
-                <div className="w-[43%] border-r border-gray-700 bg-black">
+                <div className="w-[43%] border-r border-gray-700 bg-black relative">
                     <VideoPlayer username={activeUser} roomInfo={roomInfo} socket={socket} />
+                    {currentGift && <GiftDisplay gift={currentGift} onComplete={handleGiftComplete} />}
+                    {currentAnimation && <GiftAnimation gift={currentAnimation} onComplete={handleAnimationComplete} />}
                 </div>
 
                 {/* Middle: Chat (33%) */}

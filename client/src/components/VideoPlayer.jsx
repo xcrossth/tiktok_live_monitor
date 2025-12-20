@@ -41,10 +41,7 @@ const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as pr
         const handleRecordingStatus = (data) => {
             setIsRecording(data.isRecording);
             if (data.message) setRecordingMsg(data.message);
-            if (data.error) {
-                setRecordingMsg(data.error);
-                setTimeout(() => setRecordingMsg(""), 5000);
-            }
+            if (data.error) setRecordingMsg(data.error);
         };
 
         socket.on('recordingStatus', handleRecordingStatus);
@@ -53,6 +50,16 @@ const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as pr
             socket.off('recordingStatus', handleRecordingStatus);
         };
     }, [socket]);
+
+    // Auto-hide recording message
+    useEffect(() => {
+        if (recordingMsg) {
+            const timer = setTimeout(() => {
+                setRecordingMsg("");
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [recordingMsg]);
 
     const toggleRecording = () => {
         if (!socket) return;
@@ -213,8 +220,8 @@ const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as pr
                     <button
                         onClick={toggleRecording}
                         className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border backdrop-blur-sm transition-all ${isRecording
-                                ? 'bg-red-600/80 border-red-500 text-white animate-pulse'
-                                : 'bg-black/60 hover:bg-black/80 border-gray-600 text-white'
+                            ? 'bg-red-600/80 border-red-500 text-white animate-pulse'
+                            : 'bg-black/60 hover:bg-black/80 border-gray-600 text-white'
                             }`}
                         title={isRecording ? "Stop Recording" : "Start Recording"}
                     >

@@ -33,3 +33,9 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Media
+recordings/
+animations/
+*/recordings/
+*/animations/
