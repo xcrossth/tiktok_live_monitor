@@ -9,7 +9,7 @@ import io from 'socket.io-client'; // Import socket to emit events
 // Actually, App.jsx defines `const socket = ...` outside component. 
 // Best practice: Pass socket as prop to VideoPlayer.
 
-const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as prop
+const VideoPlayer = ({ username, roomInfo, socket, volume, onVolumeChange }) => { // Accept socket and volume as prop
     const [embedUrl, setEmbedUrl] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [showPlayButton, setShowPlayButton] = useState(false);
@@ -130,6 +130,17 @@ const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as pr
         }
     }, [roomInfo]);
 
+    // Sync volume from prop
+    useEffect(() => {
+        if (videoRef.current && typeof volume === 'number' && isFinite(volume)) {
+            // Apply only if impactful difference to avoid loops
+            if (Math.abs(videoRef.current.volume - volume) > 0.001) {
+                console.log("[VideoPlayer] Syncing down from Prop:", volume);
+                videoRef.current.volume = Math.max(0, Math.min(1, volume));
+            }
+        }
+    }, [volume]);
+
     // Initialize Player when Quality or RoomInfo changes
     useEffect(() => {
         // Cleanup previous player
@@ -155,11 +166,20 @@ const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as pr
                 flvPlayer.attachMediaElement(videoRef.current);
                 flvPlayer.load();
 
+                // Force volume application immediately on load
+                if (typeof volume === 'number' && isFinite(volume)) {
+                    videoRef.current.volume = Math.max(0, Math.min(1, volume));
+                }
+
                 const playPromise = flvPlayer.play();
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
                         setIsPlaying(true);
                         setShowPlayButton(false);
+                        // Force volume AGAIN after play starts
+                        if (videoRef.current && typeof volume === 'number' && isFinite(volume)) {
+                            videoRef.current.volume = Math.max(0, Math.min(1, volume));
+                        }
                     }).catch(err => {
                         if (err.name === 'NotAllowedError' || err.message.includes('play() request was interrupted')) {
                             setIsPlaying(true);
@@ -210,7 +230,21 @@ const VideoPlayer = ({ username, roomInfo, socket }) => { // Accept socket as pr
                 ref={videoRef}
                 className="w-full h-full object-contain block"
                 controls
-                muted
+                onCanPlay={() => {
+                    // Force volume on canplay event (most reliable)
+                    if (videoRef.current && typeof volume === 'number' && isFinite(volume)) {
+                        videoRef.current.volume = Math.max(0, Math.min(1, volume));
+                    }
+                }}
+                onVolumeChange={(e) => {
+                    if (onVolumeChange) {
+                        // Only notify if difference is significant to avoid loops
+                        if (Math.abs(e.target.volume - volume) > 0.001) {
+                            console.log("[VideoPlayer] Syncing up to App:", e.target.volume);
+                            onVolumeChange(e.target.volume);
+                        }
+                    }
+                }}
             />
 
             {/* Controls Overlay (Top Right) */}

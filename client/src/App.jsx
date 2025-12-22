@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
-import { Search, Activity, Wifi, WifiOff, Settings } from 'lucide-react';
+import { Search, Activity, Wifi, WifiOff, Settings, Volume2, VolumeX } from 'lucide-react';
 import VideoPlayer from './components/VideoPlayer';
 import ChatLog from './components/ChatLog';
 import GiftLog from './components/GiftLog';
@@ -8,6 +8,124 @@ import GiftDisplay from './components/GiftDisplay';
 import GiftAnimation from './components/GiftAnimation';
 
 const socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001');
+
+// Simple beep sound as Data URI to avoid external dependencies for now
+const NOTIFICATION_SOUND = "data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"; // Truncated placeholder, will use a proper short beep in actual code
+// Actually, let's use a real short beep base64. 
+// This is a very short "ding"
+const CONNECTION_SOUND_URI = "data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAAAA0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwAAAB0AAAAAAAAAAAB0AAAAAAHAAAAB0AAAAAAAAAAAAAAAB0AAAAAAHAAAAB0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATdMfAAAAACnK18AAACqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AAAAqFv4AAAAp2v4AAAAqGv4AA//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA";
+// Note: The above is just a placeholder string pattern. I will use a generated beep function or a proper small base64 for a "ding" in the actual implementation to be safe and clean.
+// Better approach: Web Audio API oscillator for a simple beep if no file provided.
+// Let's use a simple Oscillator for "Beep" to ensure it works without file issues.
+
+// DingDongDingDong sound generator
+// Sound player using downloaded file (Doorbell Ding-Dong)
+// DingDongDingDong sound generator
+// Sound player using downloaded file (Doorbell Ding-Dong)
+const playDingDong = (volume) => {
+    try {
+        const audio = new Audio('/ding.mp3');
+        audio.volume = volume;
+        const playPromise = audio.play();
+
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    // Play again shortly after (overlap to avoid silence/delay)
+                    setTimeout(() => {
+                        const audio2 = new Audio('/ding.mp3');
+                        audio2.volume = volume;
+                        audio2.play().catch(e => console.error("Play 2 failed", e));
+                    }, 800); // 800ms delay for tighter repetition
+                })
+                .catch(e => console.error("Play failed", e));
+        }
+    } catch (e) {
+        console.error("Audio play failed", e);
+    }
+};
+
+// Sound player using embedded Base64 (To prevent download dialogs/MIME issues)
+const _bad_playDingDong = (volume) => {
+    try {
+        // Embed the MP3 as base64
+        const soundUri = "data:audio/mp3;base64,//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA//uQZAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AAAAAAHAAAAB0AA//uQZAAABUQUcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABTb3VuZEpheS5jb20gU291bmQgRWZmZWN0cwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        const audio = new Audio(soundUri);
+        audio.volume = volume;
+        audio.play().catch(e => console.error("Play failed", e));
+    } catch (e) {
+        console.error("Audio play failed", e);
+    }
+};
+
+// Old synth (renamed/deprecated)
+const _playDingDong = (volume) => {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+
+        const ctx = new AudioContext();
+        const now = ctx.currentTime;
+
+        // Define notes: High (C6 ~ 1046.5Hz), Low (G5 ~ 783.99Hz)
+        // Sequence: High - Low - High - Low
+        const notes = [
+            { freq: 1046.5, time: 0, duration: 0.2 },
+            { freq: 783.99, time: 0.4, duration: 0.4 },
+            { freq: 1046.5, time: 0.9, duration: 0.2 },
+            { freq: 783.99, time: 1.3, duration: 0.4 }
+        ];
+
+        notes.forEach(note => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            // Use triangle wave for a more bell-like "ding" sound
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(note.freq, now + note.time);
+
+            // Envelope for bell shape (sharp attack, exponential decay)
+            gain.gain.setValueAtTime(0, now + note.time);
+            gain.gain.linearRampToValueAtTime(volume, now + note.time + 0.02); // Sharp Attack
+            gain.gain.exponentialRampToValueAtTime(0.01, now + note.time + note.duration); // Decay
+
+            osc.start(now + note.time);
+            osc.stop(now + note.time + note.duration + 0.1);
+        });
+
+    } catch (e) {
+        console.error("Audio play failed", e);
+    }
+};
+
+const playBeep = (volume) => {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
+
+        gain.gain.setValueAtTime(volume, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.1);
+    } catch (e) {
+        console.error("Audio play failed", e);
+    }
+};
 
 const StatusDisplay = ({ status }) => {
     const [timeLeft, setTimeLeft] = useState(0);
@@ -67,14 +185,38 @@ function App() {
         chatHistoryLimit: 5000,
         giftHistoryLimit: 5000
     });
+
+    const [soundSettings, setSoundSettings] = useState({
+        enabled: true,
+        volume: 0.5
+    });
+
+    // Video Player Volume State (Default 50% or saved)
+    const [videoVolume, setVideoVolume] = useState(() => {
+        const saved = localStorage.getItem('tiktok_video_volume');
+        return saved !== null ? parseFloat(saved) : 0.5;
+    });
+
     const [showConnectionSettings, setShowConnectionSettings] = useState(false);
     const settingsRef = useRef(null);
     // Ref to access latest settings in socket callbacks without re-subscribing
     const connectionSettingsRef = useRef(connectionSettings);
+    const soundSettingsRef = useRef(soundSettings);
+
+    // Removed the separate useEffect for loading volume since we now do it lazily in useState
+
+    // Save video volume on change
+    useEffect(() => {
+        localStorage.setItem('tiktok_video_volume', videoVolume);
+    }, [videoVolume]);
 
     useEffect(() => {
         connectionSettingsRef.current = connectionSettings;
     }, [connectionSettings]);
+
+    useEffect(() => {
+        soundSettingsRef.current = soundSettings;
+    }, [soundSettings]);
 
     useEffect(() => {
         function handleClickOutside(event) {
@@ -172,18 +314,26 @@ function App() {
     };
 
     useEffect(() => {
-        // Load saved username and filters
+        // 1. Check URL Params for room/account
+        const params = new URLSearchParams(window.location.search);
+        let urlRoom = params.get('room') || params.get('account');
+
+
+        // 2. Load saved settings
         const savedUsername = localStorage.getItem('tiktok_username');
         const savedFilters = localStorage.getItem('tiktok_chat_filters');
         const savedConnectionSettings = localStorage.getItem('tiktok_connection_settings');
+        const savedSoundSettings = localStorage.getItem('tiktok_sound_settings');
 
-        if (savedUsername) {
-            setUsername(savedUsername);
-            // Auto-connect after a short delay to ensure socket is ready
+        // Determine effective username: URL param > LocalStorage
+        const effectiveUsername = urlRoom || savedUsername;
+
+        if (effectiveUsername) {
+            setUsername(effectiveUsername);
+            // Auto-connect mechanism
             setTimeout(() => {
-                // Use default or saved settings for auto-connect
                 const settings = savedConnectionSettings ? JSON.parse(savedConnectionSettings) : { enableAutoReconnect: false, retryInterval: 10000, chatHistoryLimit: 5000, giftHistoryLimit: 5000 };
-                handleConnect(null, savedUsername, settings);
+                handleConnect(null, effectiveUsername, settings);
             }, 500);
         }
 
@@ -198,10 +348,18 @@ function App() {
         if (savedConnectionSettings) {
             try {
                 const parsed = JSON.parse(savedConnectionSettings);
-                // Merge with defaults to ensure new fields exist
                 setConnectionSettings(prev => ({ ...prev, ...parsed }));
             } catch (e) {
                 console.error("Failed to parse saved connection settings", e);
+            }
+        }
+
+        if (savedSoundSettings) {
+            try {
+                const parsed = JSON.parse(savedSoundSettings);
+                setSoundSettings(prev => ({ ...prev, ...parsed }));
+            } catch (e) {
+                console.error("Failed to parse sound settings", e);
             }
         }
 
@@ -212,6 +370,10 @@ function App() {
 
         socket.on('status', (data) => {
             setStatus(data);
+            // Play sound if connected and enabled
+            if (data.status === 'connected' && soundSettingsRef.current.enabled) {
+                playDingDong(soundSettingsRef.current.volume);
+            }
         });
 
         socket.on('roomInfo', (data) => {
@@ -238,7 +400,8 @@ function App() {
             setChats(prev => {
                 const limit = connectionSettingsRef.current.chatHistoryLimit || 5000;
                 const newList = [...prev, enrichedData];
-                if (newList.length > limit) {
+                // If limit is 0, keep all (infinite history)
+                if (limit > 0 && newList.length > limit) {
                     return newList.slice(-limit);
                 }
                 return newList;
@@ -397,7 +560,14 @@ function App() {
                         visualCount: addedCount,
                         repeatCount: data.repeatCount,
                         updatedAt: now
-                    }, ...prev].slice(0, connectionSettingsRef.current.giftHistoryLimit || 5000);
+                    }, ...prev];
+
+                    // Slice only if limit > 0
+                    const limit = connectionSettingsRef.current.giftHistoryLimit || 5000;
+                    if (limit > 0) {
+                        return newList.slice(0, limit);
+                    }
+                    return newList;
                 }
             });
 
@@ -479,6 +649,20 @@ function App() {
         });
     };
 
+    const updateSoundSettings = (key, value) => {
+        setSoundSettings(prev => {
+            const newSettings = { ...prev, [key]: value };
+            localStorage.setItem('tiktok_sound_settings', JSON.stringify(newSettings));
+            // Trigger a test beep if volume changes
+            if (key === 'volume' && newSettings.enabled) {
+                // Debounce this in real app, but for now it's fine
+                // playBeep(value); 
+            }
+            return newSettings;
+        });
+    };
+
+
     return (
         <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
             {/* Header */}
@@ -522,7 +706,70 @@ function App() {
                         </button>
 
                         {showConnectionSettings && (
-                            <div className="absolute right-0 top-full mt-2 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-4 z-50">
+                            <div className="absolute right-0 top-full mt-2 w-72 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-4 z-50 animate-in fade-in zoom-in-95 duration-200">
+                                <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wider">Audio Settings</h3>
+
+                                <div className="space-y-4 mb-6 pb-6 border-b border-gray-700">
+                                    <label className="flex items-center justify-between text-sm text-gray-300 cursor-pointer">
+                                        <div className="flex items-center gap-2">
+                                            {soundSettings.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                                            <span>Play Sound on Connect</span>
+                                        </div>
+                                        <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+                                            <input
+                                                type="checkbox"
+                                                checked={soundSettings.enabled}
+                                                onChange={(e) => updateSoundSettings('enabled', e.target.checked)}
+                                                className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 checked:border-green-400 right-6 top-1"
+                                                style={{ right: soundSettings.enabled ? '2px' : '22px' }}
+                                            />
+                                            <div className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${soundSettings.enabled ? 'bg-green-400' : 'bg-gray-600'}`}></div>
+                                        </div>
+                                    </label>
+
+                                    <div className={`space-y-1 transition-opacity ${soundSettings.enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                                        <div className="flex justify-between items-center text-xs text-gray-400">
+                                            <span>Volume</span>
+                                            <span>{Math.round(soundSettings.volume * 100)}%</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.05"
+                                            value={soundSettings.volume}
+                                            onChange={(e) => updateSoundSettings('volume', parseFloat(e.target.value))}
+                                            onMouseUp={() => soundSettings.enabled && playDingDong(soundSettings.volume)}
+                                            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => playDingDong(soundSettings.volume)}
+                                            className="mt-2 w-full px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs text-white font-medium transition-colors flex items-center justify-center gap-1"
+                                        >
+                                            <Volume2 size={12} /> Test Sound
+                                        </button>
+                                    </div>
+
+                                    {/* Video Volume Slider */}
+                                    <div className="mt-4 pt-4 border-t border-gray-700">
+                                        <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
+                                            <span>Video Volume</span>
+                                            <span>{Math.round(videoVolume * 100)}%</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.01"
+                                            value={videoVolume}
+                                            onChange={(e) => setVideoVolume(parseFloat(e.target.value))}
+                                            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                                        />
+                                    </div>
+                                </div>
+
+
                                 <h3 className="text-sm font-bold text-gray-300 mb-3 uppercase tracking-wider">Connection Settings</h3>
 
                                 <div className="space-y-4">
@@ -558,23 +805,25 @@ function App() {
                                         <label className="block text-xs text-gray-400">Msgs to Keep</label>
                                         <input
                                             type="number"
-                                            min="10"
+                                            min="0"
                                             step="100"
-                                            value={connectionSettings.chatHistoryLimit || 5000}
-                                            onChange={(e) => updateConnectionSettings('chatHistoryLimit', parseInt(e.target.value) || 5000)}
+                                            value={connectionSettings.chatHistoryLimit !== undefined ? connectionSettings.chatHistoryLimit : 5000}
+                                            onChange={(e) => updateConnectionSettings('chatHistoryLimit', parseInt(e.target.value) || 0)}
                                             className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
                                         />
+                                        <p className="text-[10px] text-gray-500">Set to 0 for infinite history</p>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="block text-xs text-gray-400">Gifts to Keep</label>
                                         <input
                                             type="number"
-                                            min="10"
+                                            min="0"
                                             step="100"
-                                            value={connectionSettings.giftHistoryLimit || 5000}
-                                            onChange={(e) => updateConnectionSettings('giftHistoryLimit', parseInt(e.target.value) || 5000)}
+                                            value={connectionSettings.giftHistoryLimit !== undefined ? connectionSettings.giftHistoryLimit : 5000}
+                                            onChange={(e) => updateConnectionSettings('giftHistoryLimit', parseInt(e.target.value) || 0)}
                                             className="w-full px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
                                         />
+                                        <p className="text-[10px] text-gray-500">Set to 0 for infinite history</p>
                                     </div>
                                 </div>
                             </div>
@@ -596,32 +845,38 @@ function App() {
                     )}
                     <StatusDisplay status={status} />
                 </div>
-            </header>
+            </header >
 
             {/* Main Content - 3 Pane Layout */}
-            <main className="flex-1 flex overflow-hidden">
+            < main className="flex-1 flex overflow-hidden" >
                 {/* Left: Video (43%) */}
-                <div className="w-[43%] border-r border-gray-700 bg-black relative">
-                    <VideoPlayer username={activeUser} roomInfo={roomInfo} socket={socket} />
+                < div className="w-[43%] border-r border-gray-700 bg-black relative" >
+                    <VideoPlayer
+                        username={activeUser}
+                        roomInfo={roomInfo}
+                        socket={socket}
+                        volume={videoVolume}
+                        onVolumeChange={(newVol) => setVideoVolume(newVol)}
+                    />
                     {currentGift && <GiftDisplay gift={currentGift} onComplete={handleGiftComplete} />}
                     {currentAnimation && <GiftAnimation gift={currentAnimation} onComplete={handleAnimationComplete} />}
-                </div>
+                </div >
 
                 {/* Middle: Chat (33%) */}
-                <div className="w-[33%] border-r border-gray-700">
+                < div className="w-[33%] border-r border-gray-700" >
                     <ChatLog
                         chats={chats}
                         filters={chatFilters}
                         onToggleFilter={handleToggleFilter}
                     />
-                </div>
+                </div >
 
                 {/* Right: Gifts & Ranking (24%) */}
-                <div className="w-[24%]">
+                < div className="w-[24%]" >
                     <GiftLog gifts={gifts} ranking={ranking} />
-                </div>
-            </main>
-        </div>
+                </div >
+            </main >
+        </div >
     );
 }
 
