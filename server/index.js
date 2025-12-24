@@ -9,6 +9,7 @@ const crypto = require('crypto');
 
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
+const videoProcessor = require('./videoProcessor');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,6 +22,13 @@ const io = new Server(server, {
 
 app.get('/', (req, res) => {
     res.send('TikTok Live Monitor Backend is Running!');
+});
+
+app.post('/api/process-recordings', async (req, res) => {
+    console.log('Manual trigger: Processing leftover recordings...');
+    // Run in background to not block response
+    videoProcessor.processLeftoverRecordings().catch(err => console.error(err));
+    res.json({ success: true, message: 'Started processing leftover recordings' });
 });
 
 // Store connections per socket
@@ -447,6 +455,8 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    // Check for leftover recordings on startup
+    videoProcessor.processLeftoverRecordings().catch(err => console.error('Startup recovery failed:', err));
 });
 
 process.on('uncaughtException', (err) => {
