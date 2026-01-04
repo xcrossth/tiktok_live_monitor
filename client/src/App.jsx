@@ -875,8 +875,8 @@ function App() {
                 < div className="w-[24%]" >
                     <GiftLog gifts={gifts} ranking={ranking} />
                 </div >
-            </main >
-        </div >
+            </main>
+        </div>
     );
 }
 

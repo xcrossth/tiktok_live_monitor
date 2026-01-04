@@ -27,7 +27,7 @@ app.get('/', (req, res) => {
 app.post('/api/process-recordings', async (req, res) => {
     console.log('Manual trigger: Processing leftover recordings...');
     // Run in background to not block response
-    videoProcessor.processLeftoverRecordings().catch(err => console.error(err));
+    videoProcessor.processLeftoverRecordings(io).catch(err => console.error(err));
     res.json({ success: true, message: 'Started processing leftover recordings' });
 });
 
@@ -456,7 +456,7 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     // Check for leftover recordings on startup
-    videoProcessor.processLeftoverRecordings().catch(err => console.error('Startup recovery failed:', err));
+    videoProcessor.processLeftoverRecordings(io).catch(err => console.error('Startup recovery failed:', err));
 });
 
 process.on('uncaughtException', (err) => {
